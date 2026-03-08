@@ -35,11 +35,11 @@ func runSetup(cmd *cobra.Command, args []string) error {
 
 	fmt.Print(
 		"SSM path for bot token" +
-			" [/reverie/rev-bot/discord-token]: ")
+			" [/claude-notify/bot-token]: ")
 	ssmPath, _ := reader.ReadString('\n')
 	ssmPath = strings.TrimSpace(ssmPath)
 	if ssmPath == "" {
-		ssmPath = "/reverie/rev-bot/discord-token"
+		ssmPath = "/claude-notify/bot-token"
 	}
 
 	fmt.Print("Notification delay in minutes [5]: ")

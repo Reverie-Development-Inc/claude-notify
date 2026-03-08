@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 
@@ -32,9 +33,28 @@ func configPath() string {
 }
 
 func loadBotToken(ssmPath string) (string, error) {
+	// Check env var first — allows non-AWS users to
+	// export their token directly.
+	if token := os.Getenv(
+		"CLAUDE_NOTIFY_BOT_TOKEN",
+	); token != "" {
+		log.Print(
+			"bot token loaded from " +
+				"CLAUDE_NOTIFY_BOT_TOKEN env var")
+		return token, nil
+	}
+
+	log.Printf(
+		"loading bot token from SSM: %s", ssmPath)
+
+	region := os.Getenv("AWS_REGION")
+	if region == "" {
+		region = "us-east-1"
+	}
+
 	cfg, err := awsconfig.LoadDefaultConfig(
 		context.Background(),
-		awsconfig.WithRegion("us-east-1"),
+		awsconfig.WithRegion(region),
 	)
 	if err != nil {
 		return "", fmt.Errorf("load AWS config: %w", err)

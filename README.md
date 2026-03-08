@@ -1,0 +1,207 @@
+# claude-notify
+
+Discord DM notifications for idle Claude Code sessions, with reply
+injection back into the terminal.
+
+## Features
+
+- Detects when Claude Code is waiting for input (via hooks)
+- Sends a Discord DM after a configurable delay (default 5 min)
+- Includes a sanitized preview of Claude's last message
+- Suggests numbered quick-reply options
+- Injects Discord replies back into the Claude Code session
+  via named pipe (FIFO), as if typed in the terminal
+- Supports multiple concurrent sessions
+- Secrets via AWS SSM or environment variable (no AWS required)
+
+## Architecture
+
+```
+Terminal
+  claude() shell function
+    |
+    v
+claude-notify wrap -- claude "$@"
+    |  creates FIFO, writes session metadata,
+    |  merges stdin + FIFO -> claude binary
+    |
+    v
+claude-notify daemon (systemd user service)
+    |  watches session metadata files
+    |  starts idle timer on Stop hook
+    |  sends DM after delay
+    |  polls for replies
+    |  writes reply -> FIFO
+    |
+    v
+Discord (REST API)
+    bot DM channel
+    send notification / poll replies
+```
+
+## Prerequisites
+
+- **Go 1.24+**
+- **Discord bot** with DM permissions (Send Messages,
+  Read Message History). No server/guild permissions needed.
+- **Bot token** provided via one of:
+  - `CLAUDE_NOTIFY_BOT_TOKEN` environment variable, OR
+  - AWS SSM Parameter Store (requires AWS account + credentials)
+- **Linux** with systemd (user services)
+
+## Quick Start
+
+### 1. Build and install
+
+```sh
+git clone https://github.com/Reverie-Development-Inc/claude-notify.git
+cd claude-notify
+make install
+```
+
+This builds the binary and copies it to `~/.local/bin/`.
+
+### 2. Run interactive setup
+
+```sh
+claude-notify setup
+```
+
+Prompts for your Discord user ID and SSM path (or skip SSM
+if using the env var approach). Writes config to
+`~/.config/claude-notify/config.yaml`.
+
+### 3. Set your bot token
+
+**Option A: Environment variable (no AWS required)**
+
+```sh
+export CLAUDE_NOTIFY_BOT_TOKEN="your-bot-token-here"
+```
+
+Add to your shell profile to persist across sessions.
+
+**Option B: AWS SSM Parameter Store**
+
+```sh
+aws ssm put-parameter \
+  --name "/claude-notify/bot-token" \
+  --type SecureString \
+  --value "your-bot-token-here"
+```
+
+### 4. Install the systemd service
+
+```sh
+make install-service
+systemctl --user start claude-notify
+```
+
+Edit `~/.config/systemd/user/claude-notify.service` if you
+need to set `AWS_PROFILE` or other environment variables.
+
+### 5. Add the shell wrapper
+
+Add to your `~/.zshrc` or `~/.bashrc`:
+
+```sh
+claude() {
+  claude-notify wrap -- \
+    /path/to/claude "$@"
+}
+```
+
+The `setup` command prints the exact snippet with your
+detected Claude binary path.
+
+### 6. Install Claude Code hooks
+
+Copy the hook definitions to your Claude Code settings
+(`~/.claude/settings.json`):
+
+```json
+{
+  "hooks": {
+    "Stop": [{
+      "hooks": [{
+        "type": "command",
+        "command": "claude-notify session-update --status waiting",
+        "timeout": 5
+      }]
+    }],
+    "UserPromptSubmit": [{
+      "hooks": [{
+        "type": "command",
+        "command": "claude-notify session-update --status active",
+        "timeout": 5
+      }]
+    }]
+  }
+}
+```
+
+## Configuration
+
+Config file: `~/.config/claude-notify/config.yaml`
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `discord.user_id` | string | (required) | Your Discord user ID |
+| `discord.bot_token_ssm` | string | `/claude-notify/bot-token` | SSM parameter path for bot token |
+| `discord.bot_token_env` | string | `""` | Custom env var name for bot token |
+| `notify.delay_minutes` | int | `5` | Minutes idle before notification |
+| `notify.max_preview_chars` | int | `500` | Max preview length in DM |
+| `notify.include_suggestions` | bool | `true` | Include quick-reply suggestions |
+| `session.state_dir` | string | `~/.local/state/claude-notify` | Session metadata directory |
+| `session.runtime_dir` | string | `$XDG_RUNTIME_DIR/claude-notify` | FIFO and runtime files |
+
+### Environment variable overrides
+
+| Variable | Overrides |
+|----------|-----------|
+| `CLAUDE_NOTIFY_DISCORD_USER_ID` | `discord.user_id` |
+| `CLAUDE_NOTIFY_DELAY_MINUTES` | `notify.delay_minutes` |
+| `CLAUDE_NOTIFY_BOT_TOKEN_SSM` | `discord.bot_token_ssm` |
+| `CLAUDE_NOTIFY_BOT_TOKEN` | Bot token directly (skips SSM) |
+| `AWS_REGION` | AWS region for SSM (default: `us-east-1`) |
+
+## How It Works
+
+1. You run `claude "fix the bug"` (which invokes the shell
+   wrapper).
+2. The wrapper creates a FIFO, writes session metadata, and
+   launches Claude Code with stdin merged from both the
+   terminal and the FIFO.
+3. Claude Code works, then stops and waits for input.
+4. The `Stop` hook fires, calling `claude-notify session-update
+   --status waiting`, which records the idle timestamp and a
+   preview of Claude's last message.
+5. The daemon detects the idle session and starts a timer.
+6. After 5 minutes (configurable), the daemon sends a Discord
+   DM with the preview and suggested replies.
+7. You reply in Discord (e.g., "1" to pick a suggestion, or
+   type a full response).
+8. The daemon validates the reply (correct sender, fresh
+   timestamp), then writes it to the session's FIFO.
+9. Claude Code receives the reply as stdin and continues.
+10. If you type in the terminal instead, the `UserPromptSubmit`
+    hook fires, cancelling the notification/polling cycle.
+
+## Security
+
+- **FIFO permissions**: Created with `0600` on tmpfs
+  (`$XDG_RUNTIME_DIR`). Only the owning user can write.
+- **Secret sanitization**: Message previews are truncated and
+  stripped of patterns matching secrets (env vars, bearer
+  tokens, base64 blobs, connection strings).
+- **Sender validation**: Discord replies are accepted only from
+  the configured user ID, with timestamps after the
+  notification was sent.
+- **Token storage**: Bot token is held in memory only. Never
+  written to disk by the daemon. Sourced from SSM or env var.
+- **Stale FIFO cleanup**: Daemon sweeps for orphaned FIFOs
+  whose PIDs no longer exist.
+
+## License
+
+MIT -- see [LICENSE](LICENSE).
