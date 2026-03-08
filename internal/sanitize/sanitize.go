@@ -7,6 +7,7 @@ package sanitize
 import (
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 // secretPattern pairs a compiled regex with its
@@ -67,17 +68,21 @@ func StripSecrets(s string) string {
 	return s
 }
 
-// Truncate shortens s to at most maxLen characters.
-// If truncation occurs, the last 3 characters are
-// replaced with "..." to signal continuation.
+// Truncate shortens s to at most maxLen runes.
+// If truncation occurs, "..." is appended. Operates on
+// runes to avoid slicing multi-byte UTF-8 codepoints.
 func Truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
+	if maxLen <= 0 {
+		return ""
+	}
+	if utf8.RuneCountInString(s) <= maxLen {
 		return s
 	}
 	if maxLen <= 3 {
 		return "..."[:maxLen]
 	}
-	return s[:maxLen-3] + "..."
+	runes := []rune(s)
+	return string(runes[:maxLen-3]) + "..."
 }
 
 // Preview produces a safe, length-limited preview of s

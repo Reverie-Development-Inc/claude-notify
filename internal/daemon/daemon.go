@@ -197,12 +197,13 @@ func (d *Daemon) checkForReply(meta *session.Metadata) {
 }
 
 // writeToFIFO opens the named pipe for writing and sends
-// content followed by a newline. This blocks until a reader
-// has the FIFO open (by design — the wrapper's goroutine is
-// always reading).
+// content followed by a newline. Uses O_NONBLOCK to avoid
+// blocking the daemon if no reader is present.
 func writeToFIFO(fifoPath, content string) error {
 	f, err := os.OpenFile(
-		fifoPath, os.O_WRONLY, 0600,
+		fifoPath,
+		os.O_WRONLY|syscall.O_NONBLOCK,
+		0600,
 	)
 	if err != nil {
 		return fmt.Errorf("open fifo: %w", err)
