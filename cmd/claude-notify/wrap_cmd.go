@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -51,12 +49,4 @@ func runWrap(cmd *cobra.Command, args []string) error {
 		RuntimeDir:   cfg.RuntimeDir(),
 		StateDir:     cfg.StateDir(),
 	}, claudeArgs)
-}
-
-func runClaudeDirect(
-	binary string, args []string,
-) error {
-	return syscall.Exec(binary,
-		append([]string{binary}, args...),
-		os.Environ())
 }

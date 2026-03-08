@@ -1,7 +1,10 @@
 package discord
 
 import (
+	"errors"
 	"fmt"
+	"log"
+	"sync"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -10,10 +13,12 @@ import (
 // Client wraps a discordgo session for sending DM
 // notifications and polling for user replies.
 type Client struct {
-	session   *discordgo.Session
-	userID    string
-	dmChannel string
-	validator *Validator
+	session    *discordgo.Session
+	userID     string
+	dmChannel  string
+	validator  *Validator
+	retryAfter time.Time
+	mu         sync.Mutex
 }
 
 // NewClient creates a Discord REST client. The token
@@ -46,6 +51,40 @@ func (c *Client) ensureDMChannel() error {
 	return nil
 }
 
+// checkRateLimit returns an error if we should wait
+// before making another API call.
+func (c *Client) checkRateLimit() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if time.Now().Before(c.retryAfter) {
+		return fmt.Errorf(
+			"rate limited until %v",
+			c.retryAfter.Format(time.RFC3339))
+	}
+	return nil
+}
+
+// handleRateLimit checks if an error is a 429 and sets
+// the backoff timer.
+func (c *Client) handleRateLimit(err error) {
+	if err == nil {
+		return
+	}
+	// discordgo wraps HTTP errors; check for 429.
+	var restErr *discordgo.RESTError
+	if errors.As(err, &restErr) &&
+		restErr.Response != nil &&
+		restErr.Response.StatusCode == 429 {
+		c.mu.Lock()
+		// Default backoff: 5 seconds.
+		c.retryAfter = time.Now().Add(
+			5 * time.Second)
+		c.mu.Unlock()
+		log.Printf(
+			"Discord rate limited, backing off 5s")
+	}
+}
+
 // SendNotification sends a rich embed DM with the
 // question preview and numbered reply suggestions.
 // Returns the sent message ID.
@@ -53,6 +92,9 @@ func (c *Client) SendNotification(
 	projectName, shortID, preview string,
 	suggestions []string,
 ) (string, error) {
+	if err := c.checkRateLimit(); err != nil {
+		return "", err
+	}
 	if err := c.ensureDMChannel(); err != nil {
 		return "", err
 	}
@@ -86,6 +128,7 @@ func (c *Client) SendNotification(
 	msg, err := c.session.ChannelMessageSendEmbed(
 		c.dmChannel, embed,
 	)
+	c.handleRateLimit(err)
 	if err != nil {
 		return "", fmt.Errorf("send DM: %w", err)
 	}
@@ -110,6 +153,9 @@ type Reply struct {
 func (c *Client) FetchReplies(
 	afterMsgID string,
 ) ([]Reply, error) {
+	if err := c.checkRateLimit(); err != nil {
+		return nil, err
+	}
 	if err := c.ensureDMChannel(); err != nil {
 		return nil, err
 	}
@@ -117,6 +163,7 @@ func (c *Client) FetchReplies(
 	msgs, err := c.session.ChannelMessages(
 		c.dmChannel, 10, "", afterMsgID, "",
 	)
+	c.handleRateLimit(err)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"fetch messages: %w", err,
@@ -150,12 +197,16 @@ func (c *Client) FetchReplies(
 // the DM channel, e.g. to tell the user to use Discord's
 // Reply feature.
 func (c *Client) SendHint(text string) error {
+	if err := c.checkRateLimit(); err != nil {
+		return err
+	}
 	if err := c.ensureDMChannel(); err != nil {
 		return err
 	}
 	_, err := c.session.ChannelMessageSend(
 		c.dmChannel, text,
 	)
+	c.handleRateLimit(err)
 	return err
 }
 

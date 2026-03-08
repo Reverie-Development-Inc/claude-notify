@@ -9,7 +9,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"syscall"
 	"time"
 
 	"github.com/Reverie-Development-Inc/claude-notify/internal/config"
@@ -264,32 +263,6 @@ func (d *Daemon) deliverReply(
 		"reply injected for session #%s",
 		meta.ShortID,
 	)
-}
-
-// writeToFIFO opens the named pipe for writing and sends
-// content followed by a newline. Uses O_NONBLOCK to avoid
-// blocking the daemon if no reader is present.
-func writeToFIFO(fifoPath, content string) error {
-	f, err := os.OpenFile(
-		fifoPath,
-		os.O_WRONLY|syscall.O_NONBLOCK,
-		0600,
-	)
-	if err != nil {
-		return fmt.Errorf("open fifo: %w", err)
-	}
-	defer f.Close()
-	_, err = fmt.Fprintln(f, content)
-	return err
-}
-
-// isProcessAlive checks whether a process with the given
-// PID exists by sending signal 0.
-func isProcessAlive(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	return syscall.Kill(pid, 0) == nil
 }
 
 // cleanStaleSessions removes metadata files for processes
