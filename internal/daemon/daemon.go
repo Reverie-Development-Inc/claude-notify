@@ -203,31 +203,32 @@ func (d *Daemon) processReplies(
 			if ok {
 				d.deliverReply(meta, reply.Content)
 				delete(byMsgID, reply.RefMessageID)
+				continue
 			}
-			// Reply-to unknown msg — ignore.
+			// Reply-to a notification whose session
+			// already resumed — let user know.
+			if !d.hintedMsgIDs[reply.MessageID] {
+				d.hintedMsgIDs[reply.MessageID] = true
+				d.discord.SendHint(
+					"That session has already " +
+						"received a response. " +
+						"No action needed.")
+			}
 			continue
 		}
 
-		// Bare message (no reply-to).
-		if len(notified) == 1 {
-			// Only one waiting session — route to it.
-			d.deliverReply(
-				notified[0], reply.Content,
-			)
-			notified = nil
-			continue
-		}
-
-		// Multiple waiting sessions — send hint.
+		// Bare message (no reply-to) — always hint.
 		if !d.hintedMsgIDs[reply.MessageID] {
 			d.hintedMsgIDs[reply.MessageID] = true
-			hint := "Multiple sessions are waiting." +
-				" Please use Discord's **Reply**" +
-				" feature (swipe left on mobile," +
-				" or right-click → Reply on" +
-				" desktop) on the notification" +
-				" you want to respond to."
-			if err := d.discord.SendHint(hint); err != nil {
+			hint := "Trying to reply to a Claude " +
+				"Code session? Use Discord's " +
+				"**Reply** feature (swipe left " +
+				"on mobile, right-click → Reply " +
+				"on desktop) on the notification " +
+				"you want to respond to."
+			if err := d.discord.SendHint(
+				hint,
+			); err != nil {
 				log.Printf("send hint: %v", err)
 			}
 		}
