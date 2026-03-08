@@ -64,6 +64,12 @@ func runSessionUpdate(
 	}
 
 	status := session.Status(updateStatus)
+	if status != session.StatusActive &&
+		status != session.StatusWaiting {
+		return fmt.Errorf(
+			"invalid status %q: must be active or waiting",
+			updateStatus)
+	}
 	var preview string
 
 	if status == session.StatusWaiting &&

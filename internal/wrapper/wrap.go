@@ -92,15 +92,28 @@ func Run(cfg Config, args []string) error {
 
 	// Forward SIGWINCH to keep the PTY size in sync with
 	// the real terminal.
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGWINCH)
+	winchCh := make(chan os.Signal, 1)
+	signal.Notify(winchCh, syscall.SIGWINCH)
 	go func() {
-		for range sigCh {
+		for range winchCh {
 			_ = pty.InheritSize(os.Stdin, ptmx)
 		}
 	}()
 	// Trigger an initial size sync.
-	sigCh <- syscall.SIGWINCH
+	winchCh <- syscall.SIGWINCH
+
+	// Forward SIGINT and SIGTERM to the child process so
+	// Ctrl-C and kill signals propagate correctly.
+	termCh := make(chan os.Signal, 1)
+	signal.Notify(termCh,
+		syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		for sig := range termCh {
+			if cmd.Process != nil {
+				_ = cmd.Process.Signal(sig)
+			}
+		}
+	}()
 
 	// Put the real terminal into raw mode so keystrokes
 	// pass through unmodified.

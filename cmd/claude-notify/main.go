@@ -50,5 +50,9 @@ func loadBotToken(ssmPath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("get SSM param: %w", err)
 	}
+	if out.Parameter == nil || out.Parameter.Value == nil {
+		return "", fmt.Errorf(
+			"SSM param %s has no value", ssmPath)
+	}
 	return *out.Parameter.Value, nil
 }

@@ -18,6 +18,7 @@ ProtectHome=read-only
 ReadWritePaths=%h/.local/state/claude-notify
 ReadWritePaths=/run/user/%U/claude-notify
 ReadWritePaths=%h/.config/claude-notify
+ReadWritePaths=%h/.aws
 PrivateTmp=true
 
 [Install]
