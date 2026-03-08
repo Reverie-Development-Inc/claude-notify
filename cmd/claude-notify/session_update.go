@@ -17,10 +17,11 @@ import (
 // hookInput is the JSON structure Claude Code sends on
 // stdin to hook commands.
 type hookInput struct {
-	SessionID      string `json:"session_id"`
-	TranscriptPath string `json:"transcript_path"`
-	CWD            string `json:"cwd"`
-	Reason         string `json:"reason"`
+	SessionID           string `json:"session_id"`
+	TranscriptPath      string `json:"transcript_path"`
+	CWD                 string `json:"cwd"`
+	Reason              string `json:"reason"`
+	LastAssistantMessage string `json:"last_assistant_message"`
 }
 
 var sessionUpdateCmd = &cobra.Command{
@@ -72,11 +73,15 @@ func runSessionUpdate(
 	}
 	var preview string
 
-	if status == session.StatusWaiting &&
-		hi.TranscriptPath != "" {
-		raw := extractLastAssistantMessage(
-			hi.TranscriptPath)
-		preview = sanitize.Preview(raw, 500)
+	if status == session.StatusWaiting {
+		if hi.LastAssistantMessage != "" {
+			preview = sanitize.Preview(
+				hi.LastAssistantMessage, 500)
+		} else if hi.TranscriptPath != "" {
+			raw := extractLastAssistantMessage(
+				hi.TranscriptPath)
+			preview = sanitize.Preview(raw, 500)
+		}
 	}
 
 	return session.UpdateStatus(metaPath, status, preview)
