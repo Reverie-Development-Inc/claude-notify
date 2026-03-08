@@ -1,0 +1,27 @@
+{
+  "description": "claude-notify: Discord DM notifications for idle Claude Code sessions",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "claude-notify session-update --status waiting",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "claude-notify session-update --status active",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
