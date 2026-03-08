@@ -1,6 +1,9 @@
 # claude-notify v2 improvements
 
+## Status: Complete (Phase 1 + Phase 2)
+
 ## Phase 1: Critical fixes (reply routing + sanitization)
+**DONE** — commit 1915abe
 
 ### 1. Fix multi-session reply routing
 **Problem**: All waiting sessions race to claim any Discord reply.
@@ -50,7 +53,8 @@ Add patterns for:
 - Only fetch messages after this ID each tick
 - Prevents double-processing and deduplicates replies
 
-## Phase 2: Cross-platform (future)
+## Phase 2: Cross-platform
+**DONE** — commit c32cd0c
 
 ### 4. macOS support
 - Add `install/com.claude-notify.daemon.plist` (launchd)
