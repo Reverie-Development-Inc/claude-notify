@@ -1,5 +1,6 @@
 # Build output
 /build/
+/claude-notify
 
 # IDE
 .idea/

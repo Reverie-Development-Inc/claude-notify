@@ -11,6 +11,7 @@ test:
 	go test ./... -v -race
 
 install: build
+	mkdir -p $(HOME)/.local/bin
 	cp $(BUILD_DIR)/$(BINARY) \
 		$(HOME)/.local/bin/$(BINARY)
 
