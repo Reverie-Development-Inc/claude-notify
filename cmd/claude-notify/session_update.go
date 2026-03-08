@@ -58,8 +58,8 @@ func runSessionUpdate(
 			".local", "state", "claude-notify")
 		metaPath = findSessionByAncestorPID(stateDir)
 		if metaPath == "" {
-			return fmt.Errorf(
-				"no session metadata found")
+			// Not a wrapped session — exit silently.
+			return nil
 		}
 	}
 
