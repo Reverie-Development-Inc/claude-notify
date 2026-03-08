@@ -135,6 +135,60 @@ func TestStripSecrets_MixedContent(t *testing.T) {
 	}
 }
 
+func TestStripSecrets_PrivateKey(t *testing.T) {
+	input := "key: -----BEGIN RSA PRIVATE KEY-----\n" +
+		"MIIE...data\n" +
+		"-----END RSA PRIVATE KEY-----"
+	got := StripSecrets(input)
+	if strings.Contains(got, "BEGIN") {
+		t.Errorf(
+			"private key not stripped: %s", got,
+		)
+	}
+}
+
+func TestStripSecrets_SlackToken(t *testing.T) {
+	input := "token is xoxb-1234-5678-abcdef"
+	got := StripSecrets(input)
+	if strings.Contains(got, "xoxb") {
+		t.Errorf(
+			"slack token not stripped: %s", got,
+		)
+	}
+}
+
+func TestStripSecrets_GitHubToken(t *testing.T) {
+	input := "GITHUB_TOKEN=" +
+		"ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij"
+	got := StripSecrets(input)
+	if strings.Contains(got, "ghp_") {
+		t.Errorf(
+			"github token not stripped: %s", got,
+		)
+	}
+}
+
+func TestStripSecrets_OpenAIKey(t *testing.T) {
+	input := "key: sk-proj-abc123def456ghi789"
+	got := StripSecrets(input)
+	if strings.Contains(got, "sk-proj") {
+		t.Errorf(
+			"openai key not stripped: %s", got,
+		)
+	}
+}
+
+func TestStripSecrets_CaseInsensitiveSecret(t *testing.T) {
+	input := "api_key=mysecretvalue123"
+	got := StripSecrets(input)
+	if strings.Contains(got, "mysecretvalue") {
+		t.Errorf(
+			"case-insensitive secret not stripped: %s",
+			got,
+		)
+	}
+}
+
 // --- Truncate tests ---
 
 func TestTruncate_ShortStringUnchanged(t *testing.T) {

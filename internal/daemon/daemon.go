@@ -22,20 +22,25 @@ import (
 // DMs when sessions have been waiting too long, and injects
 // replies back into sessions via FIFOs.
 type Daemon struct {
-	cfg          *config.Config
-	discord      *discord.Client
-	stateDir     string
-	pollInterval time.Duration
+	cfg             *config.Config
+	discord         *discord.Client
+	stateDir        string
+	pollInterval    time.Duration
+	lastProcessedID string
+	hintedMsgIDs    map[string]bool
 }
 
 // New creates a Daemon with the given config and Discord
 // client.
-func New(cfg *config.Config, dc *discord.Client) *Daemon {
+func New(
+	cfg *config.Config, dc *discord.Client,
+) *Daemon {
 	return &Daemon{
 		cfg:          cfg,
 		discord:      dc,
 		stateDir:     cfg.StateDir(),
 		pollInterval: 10 * time.Second,
+		hintedMsgIDs: make(map[string]bool),
 	}
 }
 
@@ -67,8 +72,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 // tick runs one iteration of the daemon loop: list all
 // sessions, clean dead ones, send notifications for those
-// waiting long enough, and check for replies on notified
-// sessions.
+// waiting long enough, and process replies centrally.
 func (d *Daemon) tick() {
 	sessions, err := session.List(d.stateDir)
 	if err != nil {
@@ -76,6 +80,7 @@ func (d *Daemon) tick() {
 		return
 	}
 
+	var notified []*session.Metadata
 	for _, meta := range sessions {
 		// Clean up dead sessions.
 		if !isProcessAlive(meta.PID) {
@@ -97,8 +102,12 @@ func (d *Daemon) tick() {
 
 		if meta.NotificationSent &&
 			meta.NotificationMsgID != "" {
-			d.checkForReply(meta)
+			notified = append(notified, meta)
 		}
+	}
+
+	if len(notified) > 0 {
+		d.processReplies(notified)
 	}
 }
 
@@ -152,36 +161,96 @@ func (d *Daemon) sendNotification(meta *session.Metadata) {
 	)
 }
 
-// checkForReply polls Discord for a reply to the
-// notification message. If found, expands numbered
-// shortcuts, writes the reply to the session FIFO, and
-// resets notification state.
-func (d *Daemon) checkForReply(meta *session.Metadata) {
-	reply, err := d.discord.PollForReply(
-		meta.NotificationMsgID,
-	)
+// processReplies fetches replies from Discord and routes
+// them to the correct session using Discord reply-to
+// references. Falls back to single-session routing when
+// only one session is waiting.
+func (d *Daemon) processReplies(
+	notified []*session.Metadata,
+) {
+	// Determine the "after" cursor for fetching.
+	afterID := d.lastProcessedID
+	if afterID == "" {
+		// Use the earliest notification msg ID.
+		afterID = notified[0].NotificationMsgID
+		for _, m := range notified[1:] {
+			// Discord snowflake IDs are chronological;
+			// smaller ID = earlier message.
+			if m.NotificationMsgID < afterID {
+				afterID = m.NotificationMsgID
+			}
+		}
+	}
+
+	replies, err := d.discord.FetchReplies(afterID)
 	if err != nil {
+		log.Printf("fetch replies: %v", err)
+		return
+	}
+
+	// Build lookup: notification msg ID -> session.
+	byMsgID := make(map[string]*session.Metadata)
+	for _, m := range notified {
+		byMsgID[m.NotificationMsgID] = m
+	}
+
+	for _, reply := range replies {
+		// Update cursor so we don't re-process.
+		d.lastProcessedID = reply.MessageID
+
+		// Route by reply-to reference.
+		if reply.RefMessageID != "" {
+			meta, ok := byMsgID[reply.RefMessageID]
+			if ok {
+				d.deliverReply(meta, reply.Content)
+				delete(byMsgID, reply.RefMessageID)
+			}
+			// Reply-to unknown msg — ignore.
+			continue
+		}
+
+		// Bare message (no reply-to).
+		if len(notified) == 1 {
+			// Only one waiting session — route to it.
+			d.deliverReply(
+				notified[0], reply.Content,
+			)
+			notified = nil
+			continue
+		}
+
+		// Multiple waiting sessions — send hint.
+		if !d.hintedMsgIDs[reply.MessageID] {
+			d.hintedMsgIDs[reply.MessageID] = true
+			hint := "Multiple sessions are waiting." +
+				" Please use Discord's **Reply**" +
+				" feature (swipe left on mobile," +
+				" or right-click → Reply on" +
+				" desktop) on the notification" +
+				" you want to respond to."
+			if err := d.discord.SendHint(hint); err != nil {
+				log.Printf("send hint: %v", err)
+			}
+		}
+	}
+}
+
+// deliverReply expands numbered shortcuts, writes the
+// reply to the session FIFO, and resets notification state.
+func (d *Daemon) deliverReply(
+	meta *session.Metadata, content string,
+) {
+	content = expandShortcut(
+		content, defaultSuggestions(),
+	)
+	if err := writeToFIFO(meta.FIFO, content); err != nil {
 		log.Printf(
-			"poll reply PID %d: %v", meta.PID, err,
+			"write FIFO PID %d: %v",
+			meta.PID, err,
 		)
 		return
 	}
-	if reply == "" {
-		return
-	}
 
-	// Expand numbered shortcuts.
-	reply = expandShortcut(reply, defaultSuggestions())
-
-	// Write to FIFO.
-	if err := writeToFIFO(meta.FIFO, reply); err != nil {
-		log.Printf(
-			"write FIFO PID %d: %v", meta.PID, err,
-		)
-		return
-	}
-
-	// Reset notification state.
 	meta.NotificationSent = false
 	meta.NotificationMsgID = ""
 	meta.Status = session.StatusActive
@@ -192,7 +261,8 @@ func (d *Daemon) checkForReply(meta *session.Metadata) {
 	session.Write(path, meta)
 
 	log.Printf(
-		"reply injected for session #%s", meta.ShortID,
+		"reply injected for session #%s",
+		meta.ShortID,
 	)
 }
 
