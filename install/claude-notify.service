@@ -1,0 +1,24 @@
+[Unit]
+Description=Claude Code notification daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/claude-notify daemon
+Restart=on-failure
+RestartSec=10
+Environment=XDG_RUNTIME_DIR=/run/user/%U
+Environment=HOME=%h
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/state/claude-notify
+ReadWritePaths=/run/user/%U/claude-notify
+ReadWritePaths=%h/.config/claude-notify
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target
