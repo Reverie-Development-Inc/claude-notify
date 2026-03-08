@@ -10,7 +10,7 @@ discord:
 
 notify:
   # Minutes to wait before sending idle notification
-  delay_minutes: 5
+  delay_minutes: 15
   # Max characters in message preview
   max_preview_chars: 500
   # Include suggested next actions in notification

@@ -14,8 +14,8 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.Notify.DelayMinutes != 5 {
-		t.Errorf("want delay 5, got %d",
+	if cfg.Notify.DelayMinutes != 15 {
+		t.Errorf("want delay 15, got %d",
 			cfg.Notify.DelayMinutes)
 	}
 	if cfg.Notify.MaxPreviewChars != 500 {
@@ -138,8 +138,8 @@ func TestLoadConfig_InvalidDelayMinutes(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Should keep default when env var is invalid
-	if cfg.Notify.DelayMinutes != 5 {
-		t.Errorf("want default 5, got %d",
+	if cfg.Notify.DelayMinutes != 15 {
+		t.Errorf("want default 15, got %d",
 			cfg.Notify.DelayMinutes)
 	}
 }
