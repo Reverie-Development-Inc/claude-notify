@@ -4,8 +4,6 @@ import (
 	"context"
 	"log"
 	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -47,7 +45,7 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	defer cancel()
 
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	notifyShutdownSignals(sigCh)
 	go func() {
 		<-sigCh
 		log.Print("received shutdown signal")

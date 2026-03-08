@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -23,7 +24,9 @@ func init() {
 	rootCmd.AddCommand(setupCmd)
 }
 
-func runSetup(cmd *cobra.Command, args []string) error {
+func runSetup(
+	cmd *cobra.Command, args []string,
+) error {
 	reader := bufio.NewReader(os.Stdin)
 
 	fmt.Println("claude-notify setup")
@@ -62,10 +65,9 @@ func runSetup(cmd *cobra.Command, args []string) error {
 		},
 	}
 
-	cfgDir := filepath.Join(
-		os.Getenv("HOME"),
-		".config", "claude-notify",
-	)
+	home, _ := os.UserHomeDir()
+	cfgDir := filepath.Join(home,
+		".config", "claude-notify")
 	os.MkdirAll(cfgDir, 0700)
 	cfgPath := filepath.Join(cfgDir, "config.yaml")
 
@@ -79,32 +81,83 @@ func runSetup(cmd *cobra.Command, args []string) error {
 
 	claudeBinary := getClaudeBinaryPath()
 
-	fmt.Println("\nAdd to your ~/.zshrc:")
-	fmt.Println()
-	fmt.Println("  claude() {")
-	fmt.Println("    claude-notify wrap -- \\")
-	fmt.Printf("      %s \"$@\"\n", claudeBinary)
-	fmt.Println("  }")
-	fmt.Println()
-	fmt.Println("Install systemd service:")
-	fmt.Println("  cp install/claude-notify.service \\")
-	fmt.Println("    ~/.config/systemd/user/")
-	fmt.Println(
-		"  systemctl --user enable --now claude-notify")
+	switch runtime.GOOS {
+	case "darwin":
+		fmt.Println("\nAdd to your shell profile" +
+			" (~/.zshrc or ~/.bashrc):")
+		fmt.Println()
+		fmt.Println("  claude() {")
+		fmt.Println("    claude-notify wrap -- \\")
+		fmt.Printf("      %s \"$@\"\n", claudeBinary)
+		fmt.Println("  }")
+		fmt.Println()
+		fmt.Println("Install launchd service:")
+		fmt.Println("  cp install/com.claude-notify." +
+			"daemon.plist \\")
+		fmt.Println("    ~/Library/LaunchAgents/")
+		fmt.Println("  launchctl load " +
+			"~/Library/LaunchAgents/" +
+			"com.claude-notify.daemon.plist")
+	case "windows":
+		fmt.Println("\nAdd to your PowerShell profile" +
+			" ($PROFILE):")
+		fmt.Println()
+		fmt.Println("  function claude {")
+		fmt.Println("    claude-notify wrap -- " +
+			claudeBinary + " @args")
+		fmt.Println("  }")
+		fmt.Println()
+		fmt.Println("Note: On Windows, reply injection" +
+			" is not supported.")
+		fmt.Println("Notifications still work. For full" +
+			" features, use WSL2.")
+		fmt.Println()
+		fmt.Println("Start the daemon manually:")
+		fmt.Println("  claude-notify daemon")
+		fmt.Println()
+		fmt.Println("Or create a scheduled task to" +
+			" run it at login.")
+	default: // linux
+		fmt.Println("\nAdd to your shell profile" +
+			" (~/.zshrc or ~/.bashrc):")
+		fmt.Println()
+		fmt.Println("  claude() {")
+		fmt.Println("    claude-notify wrap -- \\")
+		fmt.Printf("      %s \"$@\"\n", claudeBinary)
+		fmt.Println("  }")
+		fmt.Println()
+		fmt.Println("Install systemd service:")
+		fmt.Println("  make install-service")
+		fmt.Println("  systemctl --user start" +
+			" claude-notify")
+	}
 
 	return nil
 }
 
 func getClaudeBinaryPath() string {
+	home, _ := os.UserHomeDir()
 	paths := []string{
-		os.Getenv("HOME") + "/.local/bin/claude",
+		filepath.Join(home,
+			".local", "bin", "claude"),
 		"/usr/local/bin/claude",
-		"/usr/bin/claude",
+	}
+	if runtime.GOOS == "windows" {
+		paths = append(paths,
+			filepath.Join(home, "AppData", "Local",
+				"Programs", "claude", "claude.exe"),
+			"claude.exe",
+		)
+	} else {
+		paths = append(paths, "/usr/bin/claude")
 	}
 	for _, p := range paths {
 		if _, err := os.Stat(p); err == nil {
 			return p
 		}
+	}
+	if runtime.GOOS == "windows" {
+		return "claude.exe"
 	}
 	return "claude"
 }

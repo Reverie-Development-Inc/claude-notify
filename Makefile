@@ -1,4 +1,5 @@
-.PHONY: build test install clean install-service install-hooks
+.PHONY: build test install clean \
+	install-service install-service-macos install-hooks
 
 BINARY := claude-notify
 BUILD_DIR := ./build
@@ -26,6 +27,19 @@ install-service: install
 	systemctl --user enable claude-notify
 	@echo "Service installed. Start with:"
 	@echo "  systemctl --user start claude-notify"
+
+install-service-macos: install
+	@if [ "$$(uname)" != "Darwin" ]; then \
+		echo "This target is for macOS only"; \
+		exit 1; \
+	fi
+	mkdir -p $(HOME)/Library/LaunchAgents
+	sed 's|/usr/local/bin/claude-notify|$(HOME)/.local/bin/claude-notify|g; s|REPLACE_WITH_USERNAME|$(USER)|g' \
+		install/com.claude-notify.daemon.plist > \
+		$(HOME)/Library/LaunchAgents/com.claude-notify.daemon.plist
+	launchctl load \
+		$(HOME)/Library/LaunchAgents/com.claude-notify.daemon.plist
+	@echo "Service installed and started."
 
 install-hooks:
 	@echo "Copy install/hooks.json to your Claude Code hooks directory"

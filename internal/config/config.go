@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 
 	"gopkg.in/yaml.v3"
@@ -105,6 +106,11 @@ func (c *Config) RuntimeDir() string {
 	}
 	if xdg := os.Getenv("XDG_RUNTIME_DIR"); xdg != "" {
 		return filepath.Join(xdg, "claude-notify")
+	}
+	if runtime.GOOS == "darwin" {
+		home, _ := os.UserHomeDir()
+		return filepath.Join(home,
+			"Library", "Caches", "claude-notify")
 	}
 	return filepath.Join(os.TempDir(), "claude-notify")
 }

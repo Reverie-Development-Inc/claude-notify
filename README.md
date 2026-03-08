@@ -47,7 +47,7 @@ Discord (REST API)
 - **Bot token** provided via one of:
   - `CLAUDE_NOTIFY_BOT_TOKEN` environment variable, OR
   - AWS SSM Parameter Store (requires AWS account + credentials)
-- **Linux** with systemd (user services)
+- **Linux** (systemd), **macOS** (launchd), or **Windows**
 
 ## Quick Start
 
@@ -201,6 +201,21 @@ Config file: `~/.config/claude-notify/config.yaml`
   written to disk by the daemon. Sourced from SSM or env var.
 - **Stale FIFO cleanup**: Daemon sweeps for orphaned FIFOs
   whose PIDs no longer exist.
+
+## Platform Support
+
+| Feature | Linux | macOS | Windows |
+|---------|-------|-------|---------|
+| Notifications (Discord DM) | Yes | Yes | Yes |
+| Reply injection (FIFO) | Yes | Yes | No |
+| PTY wrapper | Yes | Yes | No |
+| Daemon auto-start | systemd | launchd | Manual |
+| Shell wrapper | zsh/bash | zsh/bash | PowerShell |
+
+**Windows**: Hooks and notifications work normally.
+Reply injection is not available — respond by returning
+to the terminal. For full features, use
+[WSL2](https://learn.microsoft.com/en-us/windows/wsl/).
 
 ## License
 
