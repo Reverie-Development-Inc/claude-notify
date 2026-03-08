@@ -36,6 +36,36 @@ var patterns = []secretPattern{
 		replacement: "[REDACTED_KEY]",
 	},
 	{
+		// PEM private key blocks (multiline)
+		re: regexp.MustCompile(
+			`(?s)-----BEGIN[A-Z ]*PRIVATE KEY-----` +
+				`.*?-----END[A-Z ]*PRIVATE KEY-----`,
+		),
+		replacement: "[REDACTED_PRIVATE_KEY]",
+	},
+	{
+		// Slack tokens (xoxb-, xoxp-, xoxa-, xoxr-, xoxs-)
+		re: regexp.MustCompile(
+			`xox[bpars]-[A-Za-z0-9-]+`,
+		),
+		replacement: "[REDACTED_TOKEN]",
+	},
+	{
+		// GitHub tokens (ghp_, ghs_, gho_, ghu_, ghr_)
+		re: regexp.MustCompile(
+			`gh[pousr]_[A-Za-z0-9_]{36,}`,
+		),
+		replacement: "[REDACTED_TOKEN]",
+	},
+	{
+		// OpenAI / common API keys
+		// (sk-proj-, sk-live-, sk-test-, sk_live_, sk_test_)
+		re: regexp.MustCompile(
+			`sk[-_](?:proj|live|test)[-_]\S{10,}`,
+		),
+		replacement: "[REDACTED_KEY]",
+	},
+	{
 		// Bearer tokens (case-insensitive)
 		re: regexp.MustCompile(
 			`(?i)(bearer\s+)\S+`,
@@ -46,6 +76,15 @@ var patterns = []secretPattern{
 		// ENV_VAR=value assignments
 		re: regexp.MustCompile(
 			`([A-Z][A-Z_]{2,})=\S+`,
+		),
+		replacement: "${1}=[REDACTED]",
+	},
+	{
+		// Common secret assignments (case-insensitive)
+		// e.g. api_key=val, password: val, token=val
+		re: regexp.MustCompile(
+			`(?i)((?:api[_-]?key|secret|password|` +
+				`token|credential)[_-]?\w*)\s*[=:]\s*\S+`,
 		),
 		replacement: "${1}=[REDACTED]",
 	},

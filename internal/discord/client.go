@@ -2,7 +2,6 @@ package discord
 
 import (
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
@@ -95,24 +94,36 @@ func (c *Client) SendNotification(
 	return msg.ID, nil
 }
 
-// PollForReply fetches recent messages in the DM channel
-// after afterMsgID and returns the first valid reply from
-// the expected user. Returns empty string if no valid
-// reply found.
-func (c *Client) PollForReply(
+// Reply represents a validated user reply with routing
+// info.
+type Reply struct {
+	Content      string
+	MessageID    string
+	// RefMessageID is the ID of the message this replies
+	// to (Discord reply-to). Empty if bare message.
+	RefMessageID string
+}
+
+// FetchReplies fetches recent messages from the DM
+// channel sent after afterMsgID by the expected user.
+// Returns validated replies with routing information.
+func (c *Client) FetchReplies(
 	afterMsgID string,
-) (string, error) {
+) ([]Reply, error) {
 	if err := c.ensureDMChannel(); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	msgs, err := c.session.ChannelMessages(
 		c.dmChannel, 10, "", afterMsgID, "",
 	)
 	if err != nil {
-		return "", fmt.Errorf("fetch messages: %w", err)
+		return nil, fmt.Errorf(
+			"fetch messages: %w", err,
+		)
 	}
 
+	var replies []Reply
 	for _, msg := range msgs {
 		if msg.Author == nil {
 			continue
@@ -120,14 +131,32 @@ func (c *Client) PollForReply(
 		if err := c.validator.Validate(
 			msg.Author.ID, msg.Timestamp,
 		); err != nil {
-			log.Printf(
-				"skip message %s: %v", msg.ID, err,
-			)
 			continue
 		}
-		return msg.Content, nil
+		r := Reply{
+			Content:   msg.Content,
+			MessageID: msg.ID,
+		}
+		if msg.MessageReference != nil {
+			r.RefMessageID =
+				msg.MessageReference.MessageID
+		}
+		replies = append(replies, r)
 	}
-	return "", nil
+	return replies, nil
+}
+
+// SendHint sends a plain text message (not an embed) to
+// the DM channel, e.g. to tell the user to use Discord's
+// Reply feature.
+func (c *Client) SendHint(text string) error {
+	if err := c.ensureDMChannel(); err != nil {
+		return err
+	}
+	_, err := c.session.ChannelMessageSend(
+		c.dmChannel, text,
+	)
+	return err
 }
 
 // Close shuts down the discordgo session.
