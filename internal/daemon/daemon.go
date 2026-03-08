@@ -83,11 +83,28 @@ func (d *Daemon) tick() {
 	for _, meta := range sessions {
 		// Clean up dead sessions.
 		if !isProcessAlive(meta.PID) {
+			d.dismissNotification(meta)
 			path := filepath.Join(
 				d.stateDir,
 				fmt.Sprintf("%d.json", meta.PID),
 			)
 			os.Remove(path)
+			continue
+		}
+
+		// User returned to session — delete the
+		// stale Discord notification.
+		if meta.Status == session.StatusActive &&
+			meta.NotificationSent &&
+			meta.NotificationMsgID != "" {
+			d.dismissNotification(meta)
+			meta.NotificationSent = false
+			meta.NotificationMsgID = ""
+			path := filepath.Join(
+				d.stateDir,
+				fmt.Sprintf("%d.json", meta.PID),
+			)
+			session.Write(path, meta)
 			continue
 		}
 
@@ -262,6 +279,31 @@ func (d *Daemon) deliverReply(
 
 	log.Printf(
 		"reply injected for session #%s",
+		meta.ShortID,
+	)
+}
+
+// dismissNotification deletes a pending Discord
+// notification message. Called when the user returns to
+// the session or the session dies before they reply.
+func (d *Daemon) dismissNotification(
+	meta *session.Metadata,
+) {
+	if !meta.NotificationSent ||
+		meta.NotificationMsgID == "" {
+		return
+	}
+	if err := d.discord.DeleteMessage(
+		meta.NotificationMsgID,
+	); err != nil {
+		log.Printf(
+			"delete notification PID %d: %v",
+			meta.PID, err,
+		)
+		return
+	}
+	log.Printf(
+		"dismissed notification for session #%s",
 		meta.ShortID,
 	)
 }

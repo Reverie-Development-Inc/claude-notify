@@ -210,6 +210,26 @@ func (c *Client) SendHint(text string) error {
 	return err
 }
 
+// DeleteMessage deletes a message from the DM channel.
+// Used to clean up stale notifications when the user
+// returns to the session without replying via Discord.
+func (c *Client) DeleteMessage(msgID string) error {
+	if err := c.checkRateLimit(); err != nil {
+		return err
+	}
+	if err := c.ensureDMChannel(); err != nil {
+		return err
+	}
+	err := c.session.ChannelMessageDelete(
+		c.dmChannel, msgID,
+	)
+	c.handleRateLimit(err)
+	if err != nil {
+		return fmt.Errorf("delete message: %w", err)
+	}
+	return nil
+}
+
 // Close shuts down the discordgo session.
 func (c *Client) Close() {
 	if c.session != nil {
