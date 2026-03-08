@@ -103,9 +103,13 @@ func UpdateStatus(
 
 	m.Status = status
 
-	if status == StatusWaiting {
+	switch status {
+	case StatusWaiting:
 		m.LastStop = time.Now()
 		m.LastMessagePreview = preview
+		m.NotificationSent = false
+		m.NotificationMsgID = ""
+	case StatusActive:
 		m.NotificationSent = false
 		m.NotificationMsgID = ""
 	}
