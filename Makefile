@@ -1,4 +1,4 @@
-.PHONY: build test install clean
+.PHONY: build test install clean install-service install-hooks
 
 BINARY := claude-notify
 BUILD_DIR := ./build
@@ -17,3 +17,15 @@ install: build
 
 clean:
 	rm -rf $(BUILD_DIR)
+
+install-service: install
+	mkdir -p $(HOME)/.config/systemd/user
+	cp install/claude-notify.service \
+		$(HOME)/.config/systemd/user/
+	systemctl --user daemon-reload
+	systemctl --user enable claude-notify
+	@echo "Service installed. Start with:"
+	@echo "  systemctl --user start claude-notify"
+
+install-hooks:
+	@echo "Copy install/hooks.json to your Claude Code hooks directory"
