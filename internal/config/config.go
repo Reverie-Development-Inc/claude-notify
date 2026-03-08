@@ -25,6 +25,10 @@ type DiscordConfig struct {
 	// BotTokenSSM is the SSM parameter path containing
 	// the bot token. Resolved at startup, never stored.
 	BotTokenSSM string `yaml:"bot_token_ssm"`
+	// BotTokenEnv is an optional env var name holding
+	// the bot token directly (skips SSM). If empty,
+	// CLAUDE_NOTIFY_BOT_TOKEN is checked as a default.
+	BotTokenEnv string `yaml:"bot_token_env"`
 }
 
 // NotifyConfig controls notification behavior.
@@ -71,6 +75,11 @@ func (c *Config) applyEnvOverrides() {
 		if n, err := strconv.Atoi(v); err == nil {
 			c.Notify.DelayMinutes = n
 		}
+	}
+	if v := os.Getenv(
+		"CLAUDE_NOTIFY_BOT_TOKEN_SSM",
+	); v != "" {
+		c.Discord.BotTokenSSM = v
 	}
 }
 

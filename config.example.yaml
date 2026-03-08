@@ -1,0 +1,17 @@
+# claude-notify configuration
+# Copy to ~/.config/claude-notify/config.yaml
+
+discord:
+  # Your Discord user ID (right-click → Copy User ID)
+  user_id: "YOUR_DISCORD_USER_ID"
+  # SSM parameter path for bot token (optional if using
+  # CLAUDE_NOTIFY_BOT_TOKEN env var instead)
+  bot_token_ssm: "/claude-notify/bot-token"
+
+notify:
+  # Minutes to wait before sending idle notification
+  delay_minutes: 5
+  # Max characters in message preview
+  max_preview_chars: 500
+  # Include suggested next actions in notification
+  include_suggestions: true

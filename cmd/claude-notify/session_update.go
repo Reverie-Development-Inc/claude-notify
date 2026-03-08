@@ -46,7 +46,7 @@ func runSessionUpdate(
 	// empty when invoked manually).
 	inputData, _ := io.ReadAll(os.Stdin)
 	var hi hookInput
-	json.Unmarshal(inputData, &hi) // ignore errors
+	json.Unmarshal(inputData, &hi) // best-effort; empty input is valid
 
 	// Find session metadata via env var set by wrapper.
 	metaPath := os.Getenv("CLAUDE_NOTIFY_SESSION")

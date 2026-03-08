@@ -10,7 +10,7 @@ Restart=on-failure
 RestartSec=10
 Environment=XDG_RUNTIME_DIR=/run/user/%U
 Environment=HOME=%h
-Environment=AWS_PROFILE=your-aws-profile
+# Set AWS_PROFILE if needed: Environment=AWS_PROFILE=your-profile
 
 # Security hardening
 NoNewPrivileges=true
