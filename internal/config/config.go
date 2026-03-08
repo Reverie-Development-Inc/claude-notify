@@ -55,7 +55,7 @@ type SessionConfig struct {
 // defaults.
 func (c *Config) applyDefaults() {
 	if c.Notify.DelayMinutes == 0 {
-		c.Notify.DelayMinutes = 5
+		c.Notify.DelayMinutes = 15
 	}
 	if c.Notify.MaxPreviewChars == 0 {
 		c.Notify.MaxPreviewChars = 500

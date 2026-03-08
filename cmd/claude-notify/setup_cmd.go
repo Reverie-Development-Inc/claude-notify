@@ -45,10 +45,10 @@ func runSetup(
 		ssmPath = "/claude-notify/bot-token"
 	}
 
-	fmt.Print("Notification delay in minutes [5]: ")
+	fmt.Print("Notification delay in minutes [15]: ")
 	delayStr, _ := reader.ReadString('\n')
 	delayStr = strings.TrimSpace(delayStr)
-	delay := 5
+	delay := 15
 	if delayStr != "" {
 		fmt.Sscanf(delayStr, "%d", &delay)
 	}
