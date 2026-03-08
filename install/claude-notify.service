@@ -10,6 +10,7 @@ Restart=on-failure
 RestartSec=10
 Environment=XDG_RUNTIME_DIR=/run/user/%U
 Environment=HOME=%h
+Environment=AWS_PROFILE=reverie-admin-trevor
 
 # Security hardening
 NoNewPrivileges=true
