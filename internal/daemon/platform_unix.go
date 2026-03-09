@@ -9,8 +9,11 @@ import (
 )
 
 // writeToFIFO opens the named pipe for writing and
-// sends content followed by a newline. Uses O_NONBLOCK
-// to avoid blocking the daemon if no reader is present.
+// sends content followed by a carriage return (\r).
+// The PTY is in raw mode, so \r simulates pressing
+// Enter, while \n would just move the cursor down.
+// Uses O_NONBLOCK to avoid blocking the daemon if no
+// reader is present.
 func writeToFIFO(fifoPath, content string) error {
 	f, err := os.OpenFile(
 		fifoPath,
@@ -21,7 +24,7 @@ func writeToFIFO(fifoPath, content string) error {
 		return fmt.Errorf("open fifo: %w", err)
 	}
 	defer f.Close()
-	_, err = fmt.Fprintln(f, content)
+	_, err = fmt.Fprint(f, content+"\r")
 	return err
 }
 
