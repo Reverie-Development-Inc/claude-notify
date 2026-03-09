@@ -371,6 +371,155 @@ func (c *Client) FetchRecentUserMessages(
 	return replies, nil
 }
 
+// Reaction emojis used for quick replies.
+const (
+	ReactionYes  = "✅"
+	ReactionNo   = "❌"
+	ReactionLook = "👀"
+)
+
+// reactionMap maps reaction emojis to reply text.
+var reactionMap = map[string]string{
+	ReactionYes:  "Yes, continue",
+	ReactionNo:   "No, stop here",
+	ReactionLook: "Show me what you have so far",
+}
+
+// ExpandReaction returns the reply text for a reaction
+// emoji, or empty string if not recognized.
+func ExpandReaction(emoji string) string {
+	return reactionMap[emoji]
+}
+
+// AddReactions adds the quick-reply reaction emojis to
+// a message. Reactions are added in order.
+func (c *Client) AddReactions(msgID string) error {
+	if err := c.checkRateLimit(); err != nil {
+		return err
+	}
+	for _, emoji := range []string{
+		ReactionYes, ReactionNo, ReactionLook,
+	} {
+		err := c.session.MessageReactionAdd(
+			c.dmChannel, msgID, emoji,
+		)
+		if err != nil {
+			c.handleRateLimit(err)
+			return fmt.Errorf(
+				"add reaction %s: %w", emoji, err,
+			)
+		}
+	}
+	return nil
+}
+
+// RemoveAllReactions removes all reactions from a
+// message (clears the reaction bar entirely).
+func (c *Client) RemoveAllReactions(
+	msgID string,
+) error {
+	if err := c.checkRateLimit(); err != nil {
+		return err
+	}
+	err := c.session.MessageReactionsRemoveAll(
+		c.dmChannel, msgID,
+	)
+	if err != nil {
+		c.handleRateLimit(err)
+	}
+	return err
+}
+
+// FetchUserReaction returns which of the quick-reply
+// emojis the configured user has reacted with on the
+// given message. Returns the first match found in
+// priority order: ✅, ❌, 👀.
+func (c *Client) FetchUserReaction(
+	msgID string,
+) (string, error) {
+	if err := c.checkRateLimit(); err != nil {
+		return "", err
+	}
+	for _, emoji := range []string{
+		ReactionYes, ReactionNo, ReactionLook,
+	} {
+		users, err := c.session.MessageReactions(
+			c.dmChannel, msgID, emoji, 10, "", "",
+		)
+		if err != nil {
+			c.handleRateLimit(err)
+			return "", fmt.Errorf(
+				"fetch reaction %s: %w", emoji, err,
+			)
+		}
+		for _, u := range users {
+			if u.ID == c.userID {
+				return emoji, nil
+			}
+		}
+	}
+	return "", nil
+}
+
+// EditEmbedColor edits a message to change its embed
+// color. Preserves existing embed content.
+func (c *Client) EditEmbedColor(
+	msgID string, color int,
+) error {
+	if err := c.checkRateLimit(); err != nil {
+		return err
+	}
+	msg, err := c.session.ChannelMessage(
+		c.dmChannel, msgID,
+	)
+	if err != nil {
+		c.handleRateLimit(err)
+		return fmt.Errorf("fetch message: %w", err)
+	}
+	if len(msg.Embeds) == 0 {
+		return nil
+	}
+	embed := msg.Embeds[0]
+	embed.Color = color
+	_, err = c.session.ChannelMessageEditEmbed(
+		c.dmChannel, msgID, embed,
+	)
+	if err != nil {
+		c.handleRateLimit(err)
+	}
+	return err
+}
+
+// AckReply reacts with ✅ on a user's reply message
+// to acknowledge receipt.
+func (c *Client) AckReply(msgID string) error {
+	if err := c.checkRateLimit(); err != nil {
+		return err
+	}
+	err := c.session.MessageReactionAdd(
+		c.dmChannel, msgID, ReactionYes,
+	)
+	if err != nil {
+		c.handleRateLimit(err)
+	}
+	return err
+}
+
+// NackReply reacts with ❌ on a message to indicate
+// delivery failure.
+func (c *Client) NackReply(msgID string) error {
+	if err := c.checkRateLimit(); err != nil {
+		return err
+	}
+	err := c.session.MessageReactionAdd(
+		c.dmChannel, msgID, ReactionNo,
+	)
+	if err != nil {
+		c.handleRateLimit(err)
+	}
+	return err
+}
+
 // Close shuts down the discordgo session.
 func (c *Client) Close() {
 	if c.session != nil {
