@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Reverie-Development-Inc/claude-notify/internal/config"
@@ -52,6 +53,14 @@ func (d *Daemon) Run(ctx context.Context) error {
 	}
 
 	d.cleanStaleSessions()
+
+	// Register the /clear slash command.
+	if err := d.discord.RegisterClearCommand(
+		d.clearNotifications,
+	); err != nil {
+		log.Printf("register /clear command: %v", err)
+		// Non-fatal — daemon still works without it.
+	}
 
 	ticker := time.NewTicker(d.pollInterval)
 	defer ticker.Stop()
@@ -281,6 +290,52 @@ func (d *Daemon) deliverReply(
 		"reply injected for session #%s",
 		meta.ShortID,
 	)
+}
+
+// clearNotifications is the callback for the /clear
+// slash command. It dismisses notifications matching
+// the given session ID, or all if sessionID is empty.
+// Returns a human-readable result message.
+func (d *Daemon) clearNotifications(
+	sessionID string,
+) string {
+	sessions, err := session.List(d.stateDir)
+	if err != nil {
+		return "Failed to list sessions."
+	}
+
+	clearAll := sessionID == ""
+	var cleared int
+	for _, meta := range sessions {
+		if !meta.NotificationSent ||
+			meta.NotificationMsgID == "" {
+			continue
+		}
+		if !clearAll &&
+			!strings.EqualFold(
+				meta.ShortID, sessionID) {
+			continue
+		}
+		d.dismissNotification(meta)
+		meta.NotificationSent = false
+		meta.NotificationMsgID = ""
+		path := filepath.Join(
+			d.stateDir,
+			fmt.Sprintf("%d.json", meta.PID),
+		)
+		session.Write(path, meta)
+		cleared++
+	}
+
+	switch {
+	case cleared == 0:
+		return "No pending notifications to clear."
+	case cleared == 1:
+		return "Cleared 1 notification."
+	default:
+		return fmt.Sprintf(
+			"Cleared %d notifications.", cleared)
+	}
 }
 
 // dismissNotification deletes a pending Discord
