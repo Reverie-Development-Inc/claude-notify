@@ -43,7 +43,7 @@ func Run(cfg Config, args []string) error {
 	if err := syscall.Mkfifo(fifoPath, 0600); err != nil {
 		return fmt.Errorf("mkfifo: %w", err)
 	}
-	defer os.Remove(fifoPath)
+	defer func() { _ = os.Remove(fifoPath) }()
 
 	// Write initial session metadata so the daemon can
 	// discover this session.
@@ -64,7 +64,7 @@ func Run(cfg Config, args []string) error {
 	if err := session.Write(metaPath, meta); err != nil {
 		return fmt.Errorf("write metadata: %w", err)
 	}
-	defer os.Remove(metaPath)
+	defer func() { _ = os.Remove(metaPath) }()
 
 	// Build command with env vars so hooks can locate the
 	// session metadata and FIFO.
@@ -80,7 +80,7 @@ func Run(cfg Config, args []string) error {
 	if err != nil {
 		return fmt.Errorf("pty start: %w", err)
 	}
-	defer ptmx.Close()
+	defer func() { _ = ptmx.Close() }()
 
 	// Forward SIGWINCH to keep the PTY size in sync with
 	// the real terminal.
@@ -116,9 +116,11 @@ func Run(cfg Config, args []string) error {
 		if err != nil {
 			return fmt.Errorf("raw mode: %w", err)
 		}
-		defer term.Restore(
-			int(os.Stdin.Fd()), oldState,
-		)
+		defer func() {
+			_ = term.Restore(
+				int(os.Stdin.Fd()), oldState,
+			)
+		}()
 	}
 
 	// Forward: real stdin -> PTY master.
@@ -136,7 +138,7 @@ func Run(cfg Config, args []string) error {
 				return // FIFO removed means exit
 			}
 			_, _ = io.Copy(ptmx, f)
-			f.Close()
+			_ = f.Close()
 		}
 	}()
 

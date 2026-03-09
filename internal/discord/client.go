@@ -374,6 +374,6 @@ func (c *Client) FetchRecentUserMessages(
 // Close shuts down the discordgo session.
 func (c *Client) Close() {
 	if c.session != nil {
-		c.session.Close()
+		_ = c.session.Close()
 	}
 }

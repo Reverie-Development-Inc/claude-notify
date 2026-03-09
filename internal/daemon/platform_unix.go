@@ -23,7 +23,7 @@ func writeToFIFO(fifoPath, content string) error {
 	if err != nil {
 		return fmt.Errorf("open fifo: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	_, err = fmt.Fprint(f, content+"\r")
 	return err
 }

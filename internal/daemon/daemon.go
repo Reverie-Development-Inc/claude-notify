@@ -188,7 +188,12 @@ func (d *Daemon) sendNotification(meta *session.Metadata) {
 		d.stateDir,
 		fmt.Sprintf("%d.json", meta.PID),
 	)
-	session.Write(path, meta)
+	if err := session.Write(path, meta); err != nil {
+		log.Printf(
+			"write metadata PID %d: %v",
+			meta.PID, err,
+		)
+	}
 
 	log.Printf(
 		"notified for session %s (#%s)",
@@ -255,7 +260,7 @@ func (d *Daemon) processReplies(
 			// already resumed — let user know.
 			if !d.hintedMsgIDs[reply.MessageID] {
 				d.hintedMsgIDs[reply.MessageID] = true
-				d.discord.SendHint(
+				_ = d.discord.SendHint(
 					"That session has already " +
 						"received a response. " +
 						"No action needed.")
@@ -304,7 +309,12 @@ func (d *Daemon) deliverReply(
 		d.stateDir,
 		fmt.Sprintf("%d.json", meta.PID),
 	)
-	session.Write(path, meta)
+	if err := session.Write(path, meta); err != nil {
+		log.Printf(
+			"write metadata PID %d: %v",
+			meta.PID, err,
+		)
+	}
 
 	log.Printf(
 		"reply injected for session #%s",
@@ -343,7 +353,7 @@ func (d *Daemon) processCommands() {
 		}
 
 		result := d.clearNotifications(sessionID)
-		d.discord.SendHint(result)
+		_ = d.discord.SendHint(result)
 		log.Printf("clear command: %s", result)
 	}
 }
@@ -387,10 +397,10 @@ func (d *Daemon) clearNotifications(
 		return "Error clearing notifications."
 	}
 
-	switch {
-	case deleted == 0:
+	switch deleted {
+	case 0:
 		return "No notifications found to clear."
-	case deleted == 1:
+	case 1:
 		return "Cleared 1 notification."
 	default:
 		return fmt.Sprintf(
