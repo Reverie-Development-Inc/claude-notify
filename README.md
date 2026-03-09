@@ -193,7 +193,7 @@ Config file: `~/.config/claude-notify/config.yaml`
    preview of Claude's last message.
 5. The daemon detects the idle session and starts a timer.
 6. After 15 minutes (configurable), the daemon sends a Discord
-   DM with the preview and suggested replies.
+   DM with the preview and quick-reaction emojis (✅ ❌ 👀).
 7. You reply in Discord (e.g., "1" to pick a suggestion, or
    type a full response).
 8. The daemon validates the reply (correct sender, fresh
@@ -201,6 +201,41 @@ Config file: `~/.config/claude-notify/config.yaml`
 9. Claude Code receives the reply as stdin and continues.
 10. If you type in the terminal instead, the `UserPromptSubmit`
     hook fires, cancelling the notification/polling cycle.
+
+## Remote Mode
+
+When you reply to a notification from Discord, claude-notify
+enters **remote mode**. In this mode:
+
+- Claude's next response is sent as a DM immediately (no
+  15-minute delay)
+- Claude includes a summary of what it needs instead of raw
+  output
+- Remote mode stays active until you type directly in the
+  terminal
+
+### Quick Reactions
+
+Notification messages include three reaction emojis:
+
+| Reaction | Meaning |
+|----------|---------|
+| ✅ | Yes, continue |
+| ❌ | No, stop here |
+| 👀 | Show me what you have so far |
+
+React to respond quickly, or use Discord's **Reply** feature
+to type a custom response.
+
+### Reply Acknowledgement
+
+- **Typed replies**: Bot reacts with ✅ on your message
+- **Reactions**: Bot clears the reaction bar on the
+  notification
+- **Both**: Notification embed turns grey to show it's handled
+
+If the session is no longer active, the bot reacts with ❌
+and sends "Session is no longer active."
 
 ## Security
 
