@@ -64,29 +64,3 @@ func TestIsProcessAlive(t *testing.T) {
 	}
 }
 
-func TestExpandShortcut(t *testing.T) {
-	suggestions := []string{
-		"Yes, continue",
-		"No, stop here",
-		"Show me what you have so far",
-	}
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{"1", "Yes, continue"},
-		{"2", "No, stop here"},
-		{"3", "Show me what you have so far"},
-		{"hello world", "hello world"},
-		{"4", "4"}, // out of range
-	}
-	for _, tt := range tests {
-		got := expandShortcut(tt.input, suggestions)
-		if got != tt.want {
-			t.Errorf(
-				"expandShortcut(%q) = %q, want %q",
-				tt.input, got, tt.want,
-			)
-		}
-	}
-}

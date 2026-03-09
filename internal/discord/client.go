@@ -86,37 +86,40 @@ func (c *Client) handleRateLimit(err error) {
 	}
 }
 
-// SendNotification sends a rich embed DM with the
-// question preview and numbered reply suggestions.
-// Returns the sent message ID.
+// SendNotification sends an idle notification DM with
+// reaction-based quick replies. If summary is non-empty,
+// it replaces the raw preview in the embed body.
 func (c *Client) SendNotification(
-	projectName, shortID, preview string,
-	suggestions []string,
+	projectName string,
+	shortID string,
+	preview string,
+	summary string,
 ) (string, error) {
-	if err := c.checkRateLimit(); err != nil {
-		return "", err
-	}
 	if err := c.ensureDMChannel(); err != nil {
 		return "", err
 	}
-
-	desc := preview
-	if len(suggestions) > 0 {
-		desc += "\n"
-		for i, s := range suggestions {
-			desc += fmt.Sprintf(
-				"\n**%d.** %s", i+1, s,
-			)
-		}
-		desc += "\n\nOr type a custom reply."
+	if err := c.checkRateLimit(); err != nil {
+		return "", err
 	}
+
+	body := preview
+	if summary != "" {
+		body = summary
+	}
+
+	desc := fmt.Sprintf(
+		"%s\n\n"+
+			"React below, or **reply** to this "+
+			"message to type something custom.",
+		body,
+	)
 
 	embed := &discordgo.MessageEmbed{
 		Title: fmt.Sprintf(
 			"Claude waiting (%s)", projectName,
 		),
 		Description: desc,
-		Color:       0xD4A574, // warm amber
+		Color:       0xD4A574,
 		Footer: &discordgo.MessageEmbedFooter{
 			Text: fmt.Sprintf(
 				"Session: %s #%s",
@@ -129,9 +132,16 @@ func (c *Client) SendNotification(
 	msg, err := c.session.ChannelMessageSendEmbed(
 		c.dmChannel, embed,
 	)
-	c.handleRateLimit(err)
 	if err != nil {
+		c.handleRateLimit(err)
 		return "", fmt.Errorf("send DM: %w", err)
+	}
+
+	// Add quick-reply reactions
+	if reactErr := c.AddReactions(msg.ID); reactErr != nil {
+		log.Printf(
+			"failed to add reactions: %v", reactErr,
+		)
 	}
 
 	c.validator.SetNotificationTime(time.Now())
