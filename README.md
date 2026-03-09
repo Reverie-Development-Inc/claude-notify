@@ -6,7 +6,7 @@ injection back into the terminal.
 ## Features
 
 - Detects when Claude Code is waiting for input (via hooks)
-- Sends a Discord DM after a configurable delay (default 5 min)
+- Sends a Discord DM after a configurable delay (default 15 min)
 - Includes a sanitized preview of Claude's last message
 - Suggests numbered quick-reply options
 - Injects Discord replies back into the Claude Code session
@@ -149,7 +149,7 @@ Config file: `~/.config/claude-notify/config.yaml`
 | `discord.user_id` | string | (required) | Your Discord user ID |
 | `discord.bot_token_ssm` | string | `/claude-notify/bot-token` | SSM parameter path for bot token |
 | `discord.bot_token_env` | string | `""` | Custom env var name for bot token |
-| `notify.delay_minutes` | int | `5` | Minutes idle before notification |
+| `notify.delay_minutes` | int | `15` | Minutes idle before notification |
 | `notify.max_preview_chars` | int | `500` | Max preview length in DM |
 | `notify.include_suggestions` | bool | `true` | Include quick-reply suggestions |
 | `session.state_dir` | string | `~/.local/state/claude-notify` | Session metadata directory |
@@ -177,7 +177,7 @@ Config file: `~/.config/claude-notify/config.yaml`
    --status waiting`, which records the idle timestamp and a
    preview of Claude's last message.
 5. The daemon detects the idle session and starts a timer.
-6. After 5 minutes (configurable), the daemon sends a Discord
+6. After 15 minutes (configurable), the daemon sends a Discord
    DM with the preview and suggested replies.
 7. You reply in Discord (e.g., "1" to pick a suggestion, or
    type a full response).
