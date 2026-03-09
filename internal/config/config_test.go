@@ -39,7 +39,7 @@ notify:
   max_preview_chars: 300
   include_suggestions: false
 `
-	os.WriteFile(path, []byte(yamlContent), 0600)
+	_ = os.WriteFile(path, []byte(yamlContent), 0600)
 
 	cfg, err := Load(path)
 	if err != nil {
@@ -96,7 +96,7 @@ func TestLoadConfig_EnvOverridesFile(t *testing.T) {
 notify:
   delay_minutes: 10
 `
-	os.WriteFile(path, []byte(yamlContent), 0600)
+	_ = os.WriteFile(path, []byte(yamlContent), 0600)
 
 	t.Setenv("CLAUDE_NOTIFY_DISCORD_USER_ID", "from-env")
 	t.Setenv("CLAUDE_NOTIFY_DELAY_MINUTES", "20")
@@ -119,7 +119,7 @@ func TestLoadConfig_InvalidYAML(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 
-	os.WriteFile(path, []byte(":{bad yaml"), 0600)
+	_ = os.WriteFile(path, []byte(":{bad yaml"), 0600)
 
 	_, err := Load(path)
 	if err == nil {
