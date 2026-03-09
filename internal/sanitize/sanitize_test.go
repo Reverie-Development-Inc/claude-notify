@@ -168,6 +168,16 @@ func TestStripSecrets_GitHubToken(t *testing.T) {
 	}
 }
 
+func TestStripSecrets_AnthropicKey(t *testing.T) {
+	input := "key: sk-ant-api03-abcdef123456789xyz"
+	got := StripSecrets(input)
+	if strings.Contains(got, "sk-ant") {
+		t.Errorf(
+			"anthropic key not stripped: %s", got,
+		)
+	}
+}
+
 func TestStripSecrets_OpenAIKey(t *testing.T) {
 	input := "key: sk-proj-abc123def456ghi789"
 	got := StripSecrets(input)
