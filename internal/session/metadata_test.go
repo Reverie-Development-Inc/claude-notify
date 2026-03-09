@@ -90,7 +90,7 @@ func TestListSessions(t *testing.T) {
 func TestFilePermissions(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "12345.json")
-	Write(path, &Metadata{PID: 12345})
+	_ = Write(path, &Metadata{PID: 12345})
 
 	info, _ := os.Stat(path)
 	if info.Mode().Perm() != 0600 {

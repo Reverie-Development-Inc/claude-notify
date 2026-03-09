@@ -100,7 +100,7 @@ func (d *Daemon) tick() {
 				d.stateDir,
 				fmt.Sprintf("%d.json", meta.PID),
 			)
-			os.Remove(path)
+			_ = os.Remove(path)
 			continue
 		}
 
@@ -116,7 +116,7 @@ func (d *Daemon) tick() {
 				d.stateDir,
 				fmt.Sprintf("%d.json", meta.PID),
 			)
-			session.Write(path, meta)
+			_ = session.Write(path, meta)
 			continue
 		}
 
@@ -384,7 +384,7 @@ func (d *Daemon) clearNotifications(
 			d.stateDir,
 			fmt.Sprintf("%d.json", meta.PID),
 		)
-		session.Write(path, meta)
+		_ = session.Write(path, meta)
 	}
 
 	// Phase 2: scan DM channel and delete notification
@@ -446,7 +446,7 @@ func (d *Daemon) cleanStaleSessions() {
 				d.stateDir,
 				fmt.Sprintf("%d.json", meta.PID),
 			)
-			os.Remove(path)
+			_ = os.Remove(path)
 			log.Printf(
 				"cleaned stale session PID %d",
 				meta.PID,

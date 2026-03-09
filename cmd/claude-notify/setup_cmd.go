@@ -50,7 +50,7 @@ func runSetup(
 	delayStr = strings.TrimSpace(delayStr)
 	delay := 15
 	if delayStr != "" {
-		fmt.Sscanf(delayStr, "%d", &delay)
+		_, _ = fmt.Sscanf(delayStr, "%d", &delay)
 	}
 
 	cfg := &config.Config{
@@ -68,7 +68,7 @@ func runSetup(
 	home, _ := os.UserHomeDir()
 	cfgDir := filepath.Join(home,
 		".config", "claude-notify")
-	os.MkdirAll(cfgDir, 0700)
+	_ = os.MkdirAll(cfgDir, 0700)
 	cfgPath := filepath.Join(cfgDir, "config.yaml")
 
 	data, _ := yaml.Marshal(cfg)
