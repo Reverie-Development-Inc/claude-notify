@@ -13,6 +13,7 @@ injection back into the terminal.
   via named pipe (FIFO), as if typed in the terminal
 - Supports multiple concurrent sessions
 - Secrets via AWS SSM or environment variable (no AWS required)
+- Built-in health check (`claude-notify health`)
 
 ## Architecture
 
@@ -114,10 +115,22 @@ claude() {
 The `setup` command prints the exact snippet with your
 detected Claude binary path.
 
-### 6. Install Claude Code hooks
+### 6. Verify PATH
 
-Copy the hook definitions to your Claude Code settings
-(`~/.claude/settings.json`):
+Ensure `~/.local/bin` is in your `PATH`:
+
+```sh
+echo $PATH | grep -q "$HOME/.local/bin" \
+  || echo 'export PATH="$HOME/.local/bin:$PATH"' \
+     >> ~/.zshrc
+```
+
+### 7. Install Claude Code hooks
+
+Add these hook definitions to your Claude Code settings
+(`~/.claude/settings.json`). If you already have hooks
+configured, merge the `Stop` and `UserPromptSubmit`
+entries into your existing hooks arrays:
 
 ```json
 {
@@ -201,6 +214,29 @@ Config file: `~/.config/claude-notify/config.yaml`
   written to disk by the daemon. Sourced from SSM or env var.
 - **Stale FIFO cleanup**: Daemon sweeps for orphaned FIFOs
   whose PIDs no longer exist.
+
+## Troubleshooting
+
+Run the built-in health check to verify your setup:
+
+```sh
+claude-notify health
+```
+
+This checks: config file, daemon process, bot token,
+Discord connectivity, active sessions, and Claude Code
+hooks. Example output:
+
+```
+config     OK    /home/user/.config/claude-notify/config.yaml
+daemon     OK    running
+token      OK    NjE2...OTIz
+discord    OK    connected as bot
+sessions   OK    2 active (/home/user/.local/state/claude-notify)
+hooks      OK    found in settings.json
+
+All checks passed.
+```
 
 ## Platform Support
 

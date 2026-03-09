@@ -15,3 +15,8 @@ notify:
   max_preview_chars: 500
   # Include suggested next actions in notification
   include_suggestions: true
+
+# Optional: override default XDG-derived paths
+# session:
+#   state_dir: "~/.local/state/claude-notify"
+#   runtime_dir: "/run/user/1000/claude-notify"

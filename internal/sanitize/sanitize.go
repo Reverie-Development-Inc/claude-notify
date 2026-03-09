@@ -58,6 +58,13 @@ var patterns = []secretPattern{
 		replacement: "[REDACTED_TOKEN]",
 	},
 	{
+		// Anthropic API keys (sk-ant-api03-...)
+		re: regexp.MustCompile(
+			`sk-ant-[A-Za-z0-9_-]{10,}`,
+		),
+		replacement: "[REDACTED_KEY]",
+	},
+	{
 		// OpenAI / common API keys
 		// (sk-proj-, sk-live-, sk-test-, sk_live_, sk_test_)
 		re: regexp.MustCompile(
