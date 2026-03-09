@@ -39,7 +39,7 @@ func TestWriteAndRead(t *testing.T) {
 func TestUpdateStatus(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "12345.json")
-	Write(path, &Metadata{PID: 12345, Status: StatusActive})
+	_ = Write(path, &Metadata{PID: 12345, Status: StatusActive})
 
 	err := UpdateStatus(
 		path, StatusWaiting, "Should I continue?",
@@ -66,11 +66,11 @@ func TestUpdateStatus(t *testing.T) {
 
 func TestListSessions(t *testing.T) {
 	dir := t.TempDir()
-	Write(filepath.Join(dir, "100.json"),
+	_ = Write(filepath.Join(dir, "100.json"),
 		&Metadata{PID: 100, Status: StatusActive})
-	Write(filepath.Join(dir, "200.json"),
+	_ = Write(filepath.Join(dir, "200.json"),
 		&Metadata{PID: 200, Status: StatusWaiting})
-	Write(filepath.Join(dir, "300.json"),
+	_ = Write(filepath.Join(dir, "300.json"),
 		&Metadata{PID: 300, Status: StatusWaiting})
 
 	sessions, err := List(dir)
