@@ -97,9 +97,14 @@ func Read(path string) (*Metadata, error) {
 // UpdateStatus reads the metadata file at path, updates the
 // status and related fields, then writes it back. When status
 // is StatusWaiting, LastStop is set to now, the preview is
-// stored, and notification state is reset.
+// stored, and notification state is reset. notifySummary and
+// skipNotification are stored from [notify: ...] tag parsing.
 func UpdateStatus(
-	path string, status Status, preview string,
+	path string,
+	status Status,
+	preview string,
+	notifySummary string,
+	skipNotification bool,
 ) error {
 	m, err := Read(path)
 	if err != nil {
@@ -114,9 +119,13 @@ func UpdateStatus(
 		m.LastMessagePreview = preview
 		m.NotificationSent = false
 		m.NotificationMsgID = ""
+		m.NotifySummary = notifySummary
+		m.SkipNotification = skipNotification
 	case StatusActive:
 		m.NotificationSent = false
 		m.NotificationMsgID = ""
+		m.SkipNotification = false
+		m.NotifySummary = ""
 	}
 
 	return Write(path, m)

@@ -84,7 +84,17 @@ func runSessionUpdate(
 		}
 	}
 
-	return session.UpdateStatus(metaPath, status, preview)
+	// Parse notify tag from preview
+	summary, skip, cleaned := sanitize.ParseNotifyTag(
+		preview,
+	)
+	if cleaned != "" {
+		preview = sanitize.Preview(cleaned, 500)
+	}
+
+	return session.UpdateStatus(
+		metaPath, status, preview, summary, skip,
+	)
 }
 
 // extractLastAssistantMessage reads the transcript file
