@@ -87,6 +87,42 @@ func TestListSessions(t *testing.T) {
 	}
 }
 
+func TestRemoteModeFields(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.json")
+
+	m := &Metadata{
+		PID:              1234,
+		Status:           StatusWaiting,
+		RemoteMode:       true,
+		SkipNotification: true,
+		NotifySummary:    "Need approval to deploy",
+		LastInjectedAt:   time.Now().Unix(),
+	}
+	_ = Write(path, m)
+
+	got, err := Read(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.RemoteMode {
+		t.Error("RemoteMode should be true")
+	}
+	if !got.SkipNotification {
+		t.Error("SkipNotification should be true")
+	}
+	if got.NotifySummary != "Need approval to deploy" {
+		t.Errorf(
+			"NotifySummary = %q, want %q",
+			got.NotifySummary,
+			"Need approval to deploy",
+		)
+	}
+	if got.LastInjectedAt == 0 {
+		t.Error("LastInjectedAt should be nonzero")
+	}
+}
+
 func TestFilePermissions(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "12345.json")
