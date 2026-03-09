@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -236,6 +237,104 @@ func (c *Client) DeleteMessage(msgID string) error {
 		return fmt.Errorf("delete message: %w", err)
 	}
 	return nil
+}
+
+// ClearNotificationMessages scans recent DM messages for
+// notification embeds sent by the bot and deletes them.
+// If sessionFilter is non-empty, only deletes embeds
+// whose footer matches the given session ID. Returns the
+// number of messages deleted.
+func (c *Client) ClearNotificationMessages(
+	sessionFilter string,
+) (int, error) {
+	if err := c.checkRateLimit(); err != nil {
+		return 0, err
+	}
+	if err := c.ensureDMChannel(); err != nil {
+		return 0, err
+	}
+
+	// Fetch the last 50 messages in the DM channel.
+	msgs, err := c.session.ChannelMessages(
+		c.dmChannel, 50, "", "", "",
+	)
+	c.handleRateLimit(err)
+	if err != nil {
+		return 0, fmt.Errorf(
+			"fetch DM messages: %w", err)
+	}
+
+	// Find our bot's user ID from the gateway state,
+	// falling back to checking if the author isn't the
+	// configured user.
+	var botID string
+	if c.session.State != nil &&
+		c.session.State.User != nil {
+		botID = c.session.State.User.ID
+	}
+
+	deleted := 0
+	for _, msg := range msgs {
+		if msg.Author == nil {
+			continue
+		}
+		// Only delete messages from the bot.
+		if botID != "" && msg.Author.ID != botID {
+			continue
+		}
+		// Must not be from the user.
+		if msg.Author.ID == c.userID {
+			continue
+		}
+		// Must have an embed with "Claude waiting"
+		// title (our notification format).
+		if !isNotificationEmbed(
+			msg, sessionFilter,
+		) {
+			continue
+		}
+
+		err := c.session.ChannelMessageDelete(
+			c.dmChannel, msg.ID,
+		)
+		c.handleRateLimit(err)
+		if err != nil {
+			log.Printf(
+				"delete notification msg %s: %v",
+				msg.ID, err,
+			)
+			continue
+		}
+		deleted++
+	}
+	return deleted, nil
+}
+
+// isNotificationEmbed checks if a message contains a
+// claude-notify notification embed. If sessionFilter is
+// non-empty, the embed's footer must contain that session
+// ID.
+func isNotificationEmbed(
+	msg *discordgo.Message, sessionFilter string,
+) bool {
+	for _, embed := range msg.Embeds {
+		if embed.Title == "" ||
+			!strings.HasPrefix(
+				embed.Title, "Claude waiting") {
+			continue
+		}
+		if sessionFilter == "" {
+			return true
+		}
+		if embed.Footer != nil &&
+			strings.Contains(
+				strings.ToLower(embed.Footer.Text),
+				"#"+strings.ToLower(sessionFilter),
+			) {
+			return true
+		}
+	}
+	return false
 }
 
 // RegisterClearCommand registers the /clear slash command

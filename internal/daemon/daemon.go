@@ -293,30 +293,26 @@ func (d *Daemon) deliverReply(
 }
 
 // clearNotifications is the callback for the /clear
-// slash command. It dismisses notifications matching
-// the given session ID, or all if sessionID is empty.
+// slash command. It clears notifications in two ways:
+// 1. Resets metadata for tracked sessions
+// 2. Scans the DM channel for orphaned notification
+//    embeds and deletes them directly
 // Returns a human-readable result message.
 func (d *Daemon) clearNotifications(
 	sessionID string,
 ) string {
-	sessions, err := session.List(d.stateDir)
-	if err != nil {
-		return "Failed to list sessions."
-	}
-
-	clearAll := sessionID == ""
-	var cleared int
+	// Phase 1: clear tracked metadata.
+	sessions, _ := session.List(d.stateDir)
 	for _, meta := range sessions {
 		if !meta.NotificationSent ||
 			meta.NotificationMsgID == "" {
 			continue
 		}
-		if !clearAll &&
+		if sessionID != "" &&
 			!strings.EqualFold(
 				meta.ShortID, sessionID) {
 			continue
 		}
-		d.dismissNotification(meta)
 		meta.NotificationSent = false
 		meta.NotificationMsgID = ""
 		path := filepath.Join(
@@ -324,17 +320,26 @@ func (d *Daemon) clearNotifications(
 			fmt.Sprintf("%d.json", meta.PID),
 		)
 		session.Write(path, meta)
-		cleared++
+	}
+
+	// Phase 2: scan DM channel and delete notification
+	// embeds (catches orphaned messages too).
+	deleted, err := d.discord.ClearNotificationMessages(
+		sessionID,
+	)
+	if err != nil {
+		log.Printf("clear notifications: %v", err)
+		return "Error clearing notifications."
 	}
 
 	switch {
-	case cleared == 0:
-		return "No pending notifications to clear."
-	case cleared == 1:
+	case deleted == 0:
+		return "No notifications found to clear."
+	case deleted == 1:
 		return "Cleared 1 notification."
 	default:
 		return fmt.Sprintf(
-			"Cleared %d notifications.", cleared)
+			"Cleared %d notifications.", deleted)
 	}
 }
 
