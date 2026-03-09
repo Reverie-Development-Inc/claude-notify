@@ -1,0 +1,4 @@
+# Security-sensitive paths require review
+.github/workflows/   @Reverie-Development-Inc/maintainers
+internal/sanitize/   @Reverie-Development-Inc/maintainers
+internal/discord/    @Reverie-Development-Inc/maintainers
