@@ -55,6 +55,45 @@ func TestShouldNotify_ZeroLastStop(t *testing.T) {
 	}
 }
 
+func TestShouldNotify_SkipNotification(t *testing.T) {
+	meta := &session.Metadata{
+		Status:           session.StatusWaiting,
+		LastStop:         time.Now().Add(-20 * time.Minute),
+		SkipNotification: true,
+	}
+	if shouldNotify(meta, 15*time.Minute) {
+		t.Error(
+			"should not notify when " +
+				"SkipNotification is true",
+		)
+	}
+}
+
+func TestShouldNotify_RemoteMode(t *testing.T) {
+	// Remote mode with enough elapsed time —
+	// should notify even though delay is 15min.
+	meta := &session.Metadata{
+		Status:     session.StatusWaiting,
+		LastStop:   time.Now().Add(-20 * time.Second),
+		RemoteMode: true,
+	}
+	if !shouldNotify(meta, 15*time.Minute) {
+		t.Error(
+			"should notify in remote mode " +
+				"after debounce",
+		)
+	}
+
+	// Remote mode but too soon — should not notify.
+	meta.LastStop = time.Now().Add(-5 * time.Second)
+	if shouldNotify(meta, 15*time.Minute) {
+		t.Error(
+			"should not notify in remote mode " +
+				"before debounce",
+		)
+	}
+}
+
 func TestIsProcessAlive(t *testing.T) {
 	if !isProcessAlive(os.Getpid()) {
 		t.Error("current process should be alive")
