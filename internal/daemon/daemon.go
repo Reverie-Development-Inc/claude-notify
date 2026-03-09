@@ -28,6 +28,13 @@ type Daemon struct {
 	pollInterval    time.Duration
 	lastProcessedID string
 	hintedMsgIDs    map[string]bool
+	// lastCmdCheckID tracks the last DM message checked
+	// for /clear commands, to avoid re-processing.
+	lastCmdCheckID string
+	// hasEverNotified gates command polling — we only
+	// start checking for /clear after sending at least
+	// one notification (so we don't poll an empty DM).
+	hasEverNotified bool
 }
 
 // New creates a Daemon with the given config and Discord
@@ -54,13 +61,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 	d.cleanStaleSessions()
 
-	// Register the /clear slash command.
-	if err := d.discord.RegisterClearCommand(
-		d.clearNotifications,
-	); err != nil {
-		log.Printf("register /clear command: %v", err)
-		// Non-fatal — daemon still works without it.
-	}
+	// Start command polling immediately — there may be
+	// orphaned notifications from a previous run.
+	d.hasEverNotified = true
 
 	ticker := time.NewTicker(d.pollInterval)
 	defer ticker.Stop()
@@ -134,6 +137,12 @@ func (d *Daemon) tick() {
 	if len(notified) > 0 {
 		d.processReplies(notified)
 	}
+
+	// Check for /clear commands even when no sessions
+	// are currently notified (handles orphaned embeds).
+	if d.hasEverNotified {
+		d.processCommands()
+	}
 }
 
 // shouldNotify returns true if the session is waiting, has
@@ -172,6 +181,7 @@ func (d *Daemon) sendNotification(meta *session.Metadata) {
 		return
 	}
 
+	d.hasEverNotified = true
 	meta.NotificationSent = true
 	meta.NotificationMsgID = msgID
 	path := filepath.Join(
@@ -222,6 +232,16 @@ func (d *Daemon) processReplies(
 	for _, reply := range replies {
 		// Update cursor so we don't re-process.
 		d.lastProcessedID = reply.MessageID
+
+		// Handle /clear command.
+		lower := strings.ToLower(
+			strings.TrimSpace(reply.Content))
+		if strings.HasPrefix(lower, "/clear") {
+			// Already handled by processCommands,
+			// but mark as seen to skip hint.
+			d.lastCmdCheckID = reply.MessageID
+			continue
+		}
 
 		// Route by reply-to reference.
 		if reply.RefMessageID != "" {
@@ -292,8 +312,43 @@ func (d *Daemon) deliverReply(
 	)
 }
 
-// clearNotifications is the callback for the /clear
-// slash command. It clears notifications in two ways:
+// processCommands checks recent DM messages for /clear
+// commands. Runs every tick independently of whether any
+// sessions are currently notified, so orphaned embeds can
+// still be cleared.
+func (d *Daemon) processCommands() {
+	msgs, err := d.discord.FetchRecentUserMessages(5)
+	if err != nil {
+		return // silent — don't spam logs
+	}
+	for _, msg := range msgs {
+		// Skip already-processed messages.
+		if msg.MessageID <= d.lastCmdCheckID {
+			continue
+		}
+		d.lastCmdCheckID = msg.MessageID
+
+		content := strings.TrimSpace(msg.Content)
+		lower := strings.ToLower(content)
+		if !strings.HasPrefix(lower, "/clear") {
+			continue
+		}
+
+		// Parse optional session ID.
+		args := strings.Fields(content)[1:]
+		var sessionID string
+		if len(args) > 0 &&
+			strings.ToLower(args[0]) != "all" {
+			sessionID = args[0]
+		}
+
+		result := d.clearNotifications(sessionID)
+		d.discord.SendHint(result)
+		log.Printf("clear command: %s", result)
+	}
+}
+
+// clearNotifications clears notifications in two ways:
 // 1. Resets metadata for tracked sessions
 // 2. Scans the DM channel for orphaned notification
 //    embeds and deletes them directly
