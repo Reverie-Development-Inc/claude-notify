@@ -109,6 +109,20 @@ func (d *Daemon) tick() {
 		if meta.Status == session.StatusActive &&
 			meta.NotificationSent &&
 			meta.NotificationMsgID != "" {
+			// Was this a FIFO injection echo?
+			// If LastInjectedAt is within the last
+			// 30s, this is the hook firing from our
+			// own FIFO write — don't dismiss or
+			// exit remote mode.
+			if meta.RemoteMode &&
+				meta.LastInjectedAt > 0 &&
+				time.Since(
+					time.Unix(
+						meta.LastInjectedAt, 0,
+					),
+				) < 30*time.Second {
+				continue
+			}
 			d.dismissNotification(meta)
 			continue
 		}
@@ -143,9 +157,14 @@ func (d *Daemon) tick() {
 	}
 }
 
+// remoteDebounce is the short delay used in remote mode
+// instead of the full notification delay.
+const remoteDebounce = 15 * time.Second
+
 // shouldNotify returns true if the session is waiting, has
 // not already been notified, and has been waiting longer
-// than delay.
+// than delay. In remote mode, uses a short debounce
+// instead of the full delay.
 func shouldNotify(
 	meta *session.Metadata, delay time.Duration,
 ) bool {
@@ -155,10 +174,22 @@ func shouldNotify(
 	if meta.NotificationSent {
 		return false
 	}
+	if meta.SkipNotification {
+		return false
+	}
 	if meta.LastStop.IsZero() {
 		return false
 	}
-	return time.Since(meta.LastStop) >= delay
+
+	elapsed := time.Since(meta.LastStop)
+
+	// Remote mode: use short debounce instead of
+	// full delay.
+	if meta.RemoteMode {
+		return elapsed >= remoteDebounce
+	}
+
+	return elapsed >= delay
 }
 
 // sendNotification sends a Discord DM for the given session
