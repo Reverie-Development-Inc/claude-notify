@@ -38,6 +38,11 @@ type Metadata struct {
 	ShortID           string `json:"short_id,omitempty"`
 	NotificationSent  bool   `json:"notification_sent"`
 	NotificationMsgID string `json:"notification_msg_id,omitempty"`
+
+	RemoteMode       bool   `json:"remote_mode"`
+	SkipNotification bool   `json:"skip_notification"`
+	NotifySummary    string `json:"notify_summary,omitempty"`
+	LastInjectedAt   int64  `json:"last_injected_at,omitempty"`
 }
 
 // Write marshals metadata to JSON and writes it to path with
