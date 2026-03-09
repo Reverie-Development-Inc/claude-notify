@@ -104,19 +104,12 @@ func (d *Daemon) tick() {
 			continue
 		}
 
-		// User returned to session — delete the
+		// User returned to session — grey out the
 		// stale Discord notification.
 		if meta.Status == session.StatusActive &&
 			meta.NotificationSent &&
 			meta.NotificationMsgID != "" {
 			d.dismissNotification(meta)
-			meta.NotificationSent = false
-			meta.NotificationMsgID = ""
-			path := filepath.Join(
-				d.stateDir,
-				fmt.Sprintf("%d.json", meta.PID),
-			)
-			_ = session.Write(path, meta)
 			continue
 		}
 
@@ -260,7 +253,9 @@ func (d *Daemon) processReplies(
 		if reply.RefMessageID != "" {
 			meta, ok := byMsgID[reply.RefMessageID]
 			if ok {
-				d.deliverReply(meta, reply.Content)
+				d.deliverReplyFrom(
+					meta, reply.Content, reply.MessageID,
+				)
 				delete(byMsgID, reply.RefMessageID)
 				continue
 			}
@@ -331,36 +326,85 @@ func (d *Daemon) processReactions(
 	}
 }
 
-// deliverReply writes the reply to the session FIFO and
-// resets notification state.
+// ColorResolved is the grey color for handled
+// notification embeds.
+const ColorResolved = 0x95A5A6
+
+// deliverReply injects a reply into the session via
+// FIFO, acknowledges it in Discord, and enters remote
+// mode.
 func (d *Daemon) deliverReply(
-	meta *session.Metadata, content string,
+	meta *session.Metadata,
+	content string,
 ) {
-	if err := writeToFIFO(meta.FIFO, content); err != nil {
+	d.deliverReplyFrom(meta, content, "")
+}
+
+// deliverReplyFrom injects a reply and optionally
+// acknowledges a specific user message. If replyMsgID
+// is empty, the reply came from a reaction.
+func (d *Daemon) deliverReplyFrom(
+	meta *session.Metadata,
+	content string,
+	replyMsgID string,
+) {
+	// Prefix with [discord] for Claude awareness
+	injected := "[discord] " + content
+
+	err := writeToFIFO(meta.FIFO, injected)
+	if err != nil {
 		log.Printf(
-			"write FIFO PID %d: %v",
+			"FIFO write failed for %d: %v",
 			meta.PID, err,
+		)
+		if replyMsgID != "" {
+			_ = d.discord.NackReply(replyMsgID)
+		}
+		_ = d.discord.SendHint(
+			"Session is no longer active.",
 		)
 		return
 	}
 
+	// Acknowledge the user's reply message
+	if replyMsgID != "" {
+		_ = d.discord.AckReply(replyMsgID)
+	}
+
+	// Resolve the notification message
+	if meta.NotificationMsgID != "" {
+		_ = d.discord.RemoveAllReactions(
+			meta.NotificationMsgID,
+		)
+		_ = d.discord.EditEmbedColor(
+			meta.NotificationMsgID, ColorResolved,
+		)
+	}
+
+	// Update metadata: enter remote mode
 	meta.NotificationSent = false
 	meta.NotificationMsgID = ""
 	meta.Status = session.StatusActive
-	path := filepath.Join(
+	meta.RemoteMode = true
+	meta.LastInjectedAt = time.Now().Unix()
+	meta.SkipNotification = false
+	meta.NotifySummary = ""
+
+	metaPath := filepath.Join(
 		d.stateDir,
 		fmt.Sprintf("%d.json", meta.PID),
 	)
-	if err := session.Write(path, meta); err != nil {
+	if err := session.Write(
+		metaPath, meta,
+	); err != nil {
 		log.Printf(
-			"write metadata PID %d: %v",
-			meta.PID, err,
+			"failed to update metadata: %v", err,
 		)
 	}
 
 	log.Printf(
-		"reply injected for session #%s",
-		meta.ShortID,
+		"delivered reply to session %d, "+
+			"remote mode ON", meta.PID,
 	)
 }
 
@@ -450,28 +494,39 @@ func (d *Daemon) clearNotifications(
 	}
 }
 
-// dismissNotification deletes a pending Discord
-// notification message. Called when the user returns to
-// the session or the session dies before they reply.
+// dismissNotification greys out a pending Discord
+// notification and clears reactions. Called when the
+// user returns to the session or the session dies
+// before they reply.
 func (d *Daemon) dismissNotification(
 	meta *session.Metadata,
 ) {
-	if !meta.NotificationSent ||
-		meta.NotificationMsgID == "" {
-		return
+	if meta.NotificationMsgID != "" {
+		_ = d.discord.RemoveAllReactions(
+			meta.NotificationMsgID,
+		)
+		_ = d.discord.EditEmbedColor(
+			meta.NotificationMsgID, ColorResolved,
+		)
 	}
-	if err := d.discord.DeleteMessage(
-		meta.NotificationMsgID,
+	meta.NotificationSent = false
+	meta.NotificationMsgID = ""
+	meta.RemoteMode = false
+
+	metaPath := filepath.Join(
+		d.stateDir,
+		fmt.Sprintf("%d.json", meta.PID),
+	)
+	if err := session.Write(
+		metaPath, meta,
 	); err != nil {
 		log.Printf(
-			"delete notification PID %d: %v",
-			meta.PID, err,
+			"failed to update metadata: %v", err,
 		)
-		return
 	}
 	log.Printf(
-		"dismissed notification for session #%s",
-		meta.ShortID,
+		"dismissed notification for session %d",
+		meta.PID,
 	)
 }
 
