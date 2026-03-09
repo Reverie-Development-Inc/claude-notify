@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Reverie-Development-Inc/claude-notify/internal/sanitize"
 	"github.com/Reverie-Development-Inc/claude-notify/internal/session"
 )
 
@@ -151,5 +152,139 @@ func TestSessionListAndFilter(t *testing.T) {
 		all, session.StatusActive)
 	if len(active) != 2 {
 		t.Errorf("want 2 active, got %d", len(active))
+	}
+}
+
+func TestNotifyTagIntegration(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.json")
+
+	// Simulate: session in remote mode, Claude sends
+	// a message with [notify: ...] tag
+	m := &session.Metadata{
+		PID:        1234,
+		Status:     session.StatusActive,
+		RemoteMode: true,
+	}
+	_ = session.Write(path, m)
+
+	// Simulate hook input with notify tag
+	raw := "Fixed the auth bug and updated tests.\n" +
+		"[notify: Auth fix done, want me to deploy?]"
+	summary, skip, cleaned := sanitize.ParseNotifyTag(
+		raw,
+	)
+
+	preview := sanitize.Preview(cleaned, 500)
+
+	err := session.UpdateStatus(
+		path,
+		session.StatusWaiting,
+		preview,
+		summary,
+		skip,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := session.Read(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got.NotifySummary !=
+		"Auth fix done, want me to deploy?" {
+		t.Errorf(
+			"NotifySummary = %q",
+			got.NotifySummary,
+		)
+	}
+	if got.SkipNotification {
+		t.Error("SkipNotification should be false")
+	}
+	if !got.RemoteMode {
+		t.Error("RemoteMode should persist")
+	}
+}
+
+func TestNotifyTagNone(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.json")
+
+	m := &session.Metadata{
+		PID:        1234,
+		Status:     session.StatusActive,
+		RemoteMode: true,
+	}
+	_ = session.Write(path, m)
+
+	raw := "Still working on it...\n[notify: none]"
+	summary, skip, cleaned := sanitize.ParseNotifyTag(
+		raw,
+	)
+	preview := sanitize.Preview(cleaned, 500)
+
+	err := session.UpdateStatus(
+		path,
+		session.StatusWaiting,
+		preview,
+		summary,
+		skip,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := session.Read(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !got.SkipNotification {
+		t.Error("SkipNotification should be true")
+	}
+	if got.NotifySummary != "" {
+		t.Errorf(
+			"NotifySummary should be empty, got %q",
+			got.NotifySummary,
+		)
+	}
+}
+
+func TestRemoteModePreservation(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.json")
+
+	m := &session.Metadata{
+		PID:            1234,
+		Status:         session.StatusWaiting,
+		RemoteMode:     true,
+		LastInjectedAt: time.Now().Unix(),
+	}
+	_ = session.Write(path, m)
+
+	// Simulate: FIFO injection causes status -> active
+	// Remote mode should persist (FIFO echo)
+	err := session.UpdateStatus(
+		path,
+		session.StatusActive,
+		"",
+		"",
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, _ := session.Read(path)
+	// RemoteMode is NOT cleared by UpdateStatus --
+	// only the daemon clears it when detecting real
+	// terminal input
+	if !got.RemoteMode {
+		t.Error(
+			"RemoteMode should persist through " +
+				"FIFO echo",
+		)
 	}
 }
