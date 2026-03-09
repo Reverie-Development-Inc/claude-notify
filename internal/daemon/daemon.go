@@ -165,39 +165,42 @@ func shouldNotify(
 
 // sendNotification sends a Discord DM for the given session
 // and updates the metadata file with the notification state.
-func (d *Daemon) sendNotification(meta *session.Metadata) {
+func (d *Daemon) sendNotification(
+	meta *session.Metadata,
+) {
 	projectName := filepath.Base(meta.CWD)
-	suggestions := defaultSuggestions()
 
 	msgID, err := d.discord.SendNotification(
-		projectName, meta.ShortID,
-		meta.LastMessagePreview, suggestions,
+		projectName,
+		meta.ShortID,
+		meta.LastMessagePreview,
+		meta.NotifySummary,
 	)
 	if err != nil {
 		log.Printf(
-			"send notification PID %d: %v",
+			"failed to send notification for %d: %v",
 			meta.PID, err,
 		)
 		return
 	}
 
-	d.hasEverNotified = true
 	meta.NotificationSent = true
 	meta.NotificationMsgID = msgID
-	path := filepath.Join(
+	metaPath := filepath.Join(
 		d.stateDir,
 		fmt.Sprintf("%d.json", meta.PID),
 	)
-	if err := session.Write(path, meta); err != nil {
+	if err := session.Write(
+		metaPath, meta,
+	); err != nil {
 		log.Printf(
-			"write metadata PID %d: %v",
-			meta.PID, err,
+			"failed to update metadata: %v", err,
 		)
 	}
-
+	d.hasEverNotified = true
 	log.Printf(
-		"notified for session %s (#%s)",
-		projectName, meta.ShortID,
+		"sent notification for session %d "+
+			"(msg: %s)", meta.PID, msgID,
 	)
 }
 
@@ -286,14 +289,11 @@ func (d *Daemon) processReplies(
 	}
 }
 
-// deliverReply expands numbered shortcuts, writes the
-// reply to the session FIFO, and resets notification state.
+// deliverReply writes the reply to the session FIFO and
+// resets notification state.
 func (d *Daemon) deliverReply(
 	meta *session.Metadata, content string,
 ) {
-	content = expandShortcut(
-		content, defaultSuggestions(),
-	)
 	if err := writeToFIFO(meta.FIFO, content); err != nil {
 		log.Printf(
 			"write FIFO PID %d: %v",
@@ -455,34 +455,3 @@ func (d *Daemon) cleanStaleSessions() {
 	}
 }
 
-// defaultSuggestions returns the numbered reply options
-// included in every notification DM.
-func defaultSuggestions() []string {
-	return []string{
-		"Yes, continue",
-		"No, stop here",
-		"Show me what you have so far",
-	}
-}
-
-// expandShortcut maps "1", "2", "3" to the corresponding
-// suggestion text. Non-matching input is returned as-is.
-func expandShortcut(
-	reply string, suggestions []string,
-) string {
-	switch reply {
-	case "1":
-		if len(suggestions) > 0 {
-			return suggestions[0]
-		}
-	case "2":
-		if len(suggestions) > 1 {
-			return suggestions[1]
-		}
-	case "3":
-		if len(suggestions) > 2 {
-			return suggestions[2]
-		}
-	}
-	return reply
-}
