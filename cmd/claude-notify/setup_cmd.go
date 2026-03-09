@@ -37,12 +37,23 @@ func runSetup(
 	userID = strings.TrimSpace(userID)
 
 	fmt.Print(
-		"SSM path for bot token" +
-			" [/claude-notify/bot-token]: ")
+		"Bot token source — enter SSM path, " +
+			"or \"env\" to use\n" +
+			"CLAUDE_NOTIFY_BOT_TOKEN env var " +
+			"[/claude-notify/bot-token]: ")
 	ssmPath, _ := reader.ReadString('\n')
 	ssmPath = strings.TrimSpace(ssmPath)
-	if ssmPath == "" {
+	useEnv := strings.EqualFold(ssmPath, "env")
+	if !useEnv && ssmPath == "" {
 		ssmPath = "/claude-notify/bot-token"
+	}
+
+	awsRegion := ""
+	if !useEnv {
+		fmt.Print(
+			"AWS region for SSM [us-east-1]: ")
+		awsRegion, _ = reader.ReadString('\n')
+		awsRegion = strings.TrimSpace(awsRegion)
 	}
 
 	fmt.Print("Notification delay in minutes [15]: ")
@@ -53,11 +64,18 @@ func runSetup(
 		_, _ = fmt.Sscanf(delayStr, "%d", &delay)
 	}
 
+	discordCfg := config.DiscordConfig{
+		UserID:    userID,
+		AWSRegion: awsRegion,
+	}
+	if useEnv {
+		discordCfg.BotTokenEnv = "CLAUDE_NOTIFY_BOT_TOKEN"
+	} else {
+		discordCfg.BotTokenSSM = ssmPath
+	}
+
 	cfg := &config.Config{
-		Discord: config.DiscordConfig{
-			UserID:      userID,
-			BotTokenSSM: ssmPath,
-		},
+		Discord: discordCfg,
 		Notify: config.NotifyConfig{
 			DelayMinutes:       delay,
 			MaxPreviewChars:    500,

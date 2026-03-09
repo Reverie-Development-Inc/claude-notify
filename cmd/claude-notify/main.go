@@ -32,7 +32,9 @@ func configPath() string {
 	)
 }
 
-func loadBotToken(ssmPath string) (string, error) {
+func loadBotToken(
+	ssmPath string, region string,
+) (string, error) {
 	// Check env var first — allows non-AWS users to
 	// export their token directly.
 	if token := os.Getenv(
@@ -45,12 +47,8 @@ func loadBotToken(ssmPath string) (string, error) {
 	}
 
 	log.Printf(
-		"loading bot token from SSM: %s", ssmPath)
-
-	region := os.Getenv("AWS_REGION")
-	if region == "" {
-		region = "us-east-1"
-	}
+		"loading bot token from SSM: %s "+
+			"(region: %s)", ssmPath, region)
 
 	cfg, err := awsconfig.LoadDefaultConfig(
 		context.Background(),

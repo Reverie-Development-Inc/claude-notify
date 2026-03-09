@@ -28,7 +28,9 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	token, err := loadBotToken(cfg.Discord.BotTokenSSM)
+	token, err := loadBotToken(
+		cfg.Discord.BotTokenSSM, cfg.ResolveAWSRegion(),
+	)
 	if err != nil {
 		return err
 	}

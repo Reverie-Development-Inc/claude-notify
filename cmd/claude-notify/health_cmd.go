@@ -53,7 +53,9 @@ func runHealth(cmd *cobra.Command, args []string) error {
 	}
 
 	// 3. Bot token
-	token, err := loadBotToken(cfg.Discord.BotTokenSSM)
+	token, err := loadBotToken(
+		cfg.Discord.BotTokenSSM, cfg.ResolveAWSRegion(),
+	)
 	if err != nil {
 		fmt.Printf("token      FAIL  %s\n", err)
 		ok = false
