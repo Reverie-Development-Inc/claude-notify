@@ -68,9 +68,9 @@ This builds the binary and copies it to `~/.local/bin/`.
 claude-notify setup
 ```
 
-Prompts for your Discord user ID and SSM path (or skip SSM
-if using the env var approach). Writes config to
-`~/.config/claude-notify/config.yaml`.
+Prompts for your Discord user ID, token source (SSM path or
+env var), AWS region (if using SSM), and notification delay.
+Writes config to `~/.config/claude-notify/config.yaml`.
 
 ### 3. Set your bot token
 
@@ -162,6 +162,7 @@ Config file: `~/.config/claude-notify/config.yaml`
 | `discord.user_id` | string | (required) | Your Discord user ID |
 | `discord.bot_token_ssm` | string | `/claude-notify/bot-token` | SSM parameter path for bot token |
 | `discord.bot_token_env` | string | `""` | Custom env var name for bot token |
+| `discord.aws_region` | string | `us-east-1` | AWS region for SSM lookups |
 | `notify.delay_minutes` | int | `15` | Minutes idle before notification |
 | `notify.max_preview_chars` | int | `500` | Max preview length in DM |
 | `notify.include_suggestions` | bool | `true` | Include quick-reply suggestions |
@@ -176,7 +177,8 @@ Config file: `~/.config/claude-notify/config.yaml`
 | `CLAUDE_NOTIFY_DELAY_MINUTES` | `notify.delay_minutes` |
 | `CLAUDE_NOTIFY_BOT_TOKEN_SSM` | `discord.bot_token_ssm` |
 | `CLAUDE_NOTIFY_BOT_TOKEN` | Bot token directly (skips SSM) |
-| `AWS_REGION` | AWS region for SSM (default: `us-east-1`) |
+| `CLAUDE_NOTIFY_AWS_REGION` | `discord.aws_region` |
+| `AWS_REGION` | Fallback AWS region if neither config nor `CLAUDE_NOTIFY_AWS_REGION` is set |
 
 ## How It Works
 

@@ -30,6 +30,10 @@ type DiscordConfig struct {
 	// the bot token directly (skips SSM). If empty,
 	// CLAUDE_NOTIFY_BOT_TOKEN is checked as a default.
 	BotTokenEnv string `yaml:"bot_token_env"`
+	// AWSRegion is the AWS region for SSM lookups.
+	// Only used when loading the bot token from SSM.
+	// Defaults to us-east-1 if empty.
+	AWSRegion string `yaml:"aws_region"`
 }
 
 // NotifyConfig controls notification behavior.
@@ -82,6 +86,24 @@ func (c *Config) applyEnvOverrides() {
 	); v != "" {
 		c.Discord.BotTokenSSM = v
 	}
+	if v := os.Getenv(
+		"CLAUDE_NOTIFY_AWS_REGION",
+	); v != "" {
+		c.Discord.AWSRegion = v
+	}
+}
+
+// ResolveAWSRegion returns the AWS region to use for
+// SSM lookups. Priority: config field → AWS_REGION env
+// var → us-east-1 default.
+func (c *Config) ResolveAWSRegion() string {
+	if c.Discord.AWSRegion != "" {
+		return c.Discord.AWSRegion
+	}
+	if v := os.Getenv("AWS_REGION"); v != "" {
+		return v
+	}
+	return "us-east-1"
 }
 
 // StateDir returns the directory for persistent state

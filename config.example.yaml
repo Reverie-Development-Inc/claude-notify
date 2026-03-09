@@ -7,6 +7,10 @@ discord:
   # SSM parameter path for bot token (optional if using
   # CLAUDE_NOTIFY_BOT_TOKEN env var instead)
   bot_token_ssm: "/claude-notify/bot-token"
+  # AWS region for SSM lookups (only used with SSM).
+  # Also overridable via CLAUDE_NOTIFY_AWS_REGION or
+  # AWS_REGION env vars. Defaults to us-east-1.
+  # aws_region: "us-east-1"
 
 notify:
   # Minutes to wait before sending idle notification
