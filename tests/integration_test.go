@@ -31,7 +31,8 @@ func TestMetadataLifecycle(t *testing.T) {
 	// Simulate Stop hook updating status to waiting
 	err := session.UpdateStatus(path,
 		session.StatusWaiting,
-		"I finished the implementation. Should I continue?")
+		"I finished the implementation. Should I continue?",
+		"", false)
 	if err != nil {
 		t.Fatalf("update to waiting: %v", err)
 	}
@@ -76,6 +77,7 @@ func TestMetadataLifecycle(t *testing.T) {
 	// Simulate UserPromptSubmit resetting to active
 	if err := session.UpdateStatus(
 		path, session.StatusActive, "",
+		"", false,
 	); err != nil {
 		t.Fatalf("update to active: %v", err)
 	}

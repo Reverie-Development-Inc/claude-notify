@@ -43,6 +43,7 @@ func TestUpdateStatus(t *testing.T) {
 
 	err := UpdateStatus(
 		path, StatusWaiting, "Should I continue?",
+		"", false,
 	)
 	if err != nil {
 		t.Fatalf("update: %v", err)
