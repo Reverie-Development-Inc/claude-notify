@@ -138,6 +138,11 @@ func (d *Daemon) tick() {
 		d.processReplies(notified)
 	}
 
+	// Process reactions on notification messages
+	if len(notified) > 0 {
+		d.processReactions(notified)
+	}
+
 	// Check for /clear commands even when no sessions
 	// are currently notified (handles orphaned embeds).
 	if d.hasEverNotified {
@@ -286,6 +291,43 @@ func (d *Daemon) processReplies(
 				log.Printf("send hint: %v", err)
 			}
 		}
+	}
+}
+
+// processReactions checks for user reactions on
+// active notification messages and delivers them
+// as replies.
+func (d *Daemon) processReactions(
+	notified []*session.Metadata,
+) {
+	for _, meta := range notified {
+		if meta.NotificationMsgID == "" {
+			continue
+		}
+		emoji, err := d.discord.FetchUserReaction(
+			meta.NotificationMsgID,
+		)
+		if err != nil {
+			log.Printf(
+				"reaction poll error for %d: %v",
+				meta.PID, err,
+			)
+			continue
+		}
+		if emoji == "" {
+			continue
+		}
+
+		text := discord.ExpandReaction(emoji)
+		if text == "" {
+			continue
+		}
+
+		log.Printf(
+			"reaction %s from user on session %d",
+			emoji, meta.PID,
+		)
+		d.deliverReply(meta, text)
 	}
 }
 
