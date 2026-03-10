@@ -34,6 +34,28 @@ jobs:
         with:
           sarif_file: trivy-results.sarif
 
+  gosec:
+    name: Go Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: securego/gosec@v2.22.4
+        with:
+          args: ./...
+
+  semgrep:
+    name: Semgrep SAST
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - run: semgrep scan --config auto --sarif -o semgrep.sarif .
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: semgrep.sarif
+
   gitleaks:
     name: Gitleaks secret detection
     runs-on: ubuntu-latest
