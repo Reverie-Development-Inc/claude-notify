@@ -1,0 +1,49 @@
+name: PR Size Label
+
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+            });
+            const changes = files.reduce(
+              (sum, f) => sum + f.additions + f.deletions, 0
+            );
+            const sizes = [
+              { label: 'size/xs', max: 10 },
+              { label: 'size/s',  max: 50 },
+              { label: 'size/m',  max: 200 },
+              { label: 'size/l',  max: 500 },
+              { label: 'size/xl', max: Infinity },
+            ];
+            const size = sizes.find(s => changes <= s.max);
+            const all = sizes.map(s => s.label);
+            const current = context.payload.pull_request.labels
+              .map(l => l.name)
+              .filter(n => all.includes(n));
+            if (current.length) {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                name: current[0],
+              }).catch(() => {});
+            }
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              labels: [size.label],
+            });
