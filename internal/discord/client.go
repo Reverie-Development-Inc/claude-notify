@@ -203,62 +203,6 @@ func (c *Client) SendNotification(
 	return msg.ID, nil
 }
 
-// Reply represents a validated user reply with routing
-// info.
-type Reply struct {
-	Content      string
-	MessageID    string
-	// RefMessageID is the ID of the message this replies
-	// to (Discord reply-to). Empty if bare message.
-	RefMessageID string
-}
-
-// FetchReplies fetches recent messages from the DM
-// channel sent after afterMsgID by the expected user.
-// Returns validated replies with routing information.
-func (c *Client) FetchReplies(
-	afterMsgID string,
-) ([]Reply, error) {
-	if err := c.checkRateLimit(); err != nil {
-		return nil, err
-	}
-	if err := c.ensureDMChannel(); err != nil {
-		return nil, err
-	}
-
-	msgs, err := c.session.ChannelMessages(
-		c.dmChannel, 10, "", afterMsgID, "",
-	)
-	c.handleRateLimit(err)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"fetch messages: %w", err,
-		)
-	}
-
-	var replies []Reply
-	for _, msg := range msgs {
-		if msg.Author == nil {
-			continue
-		}
-		if err := c.validator.Validate(
-			msg.Author.ID, msg.Timestamp,
-		); err != nil {
-			continue
-		}
-		r := Reply{
-			Content:   msg.Content,
-			MessageID: msg.ID,
-		}
-		if msg.MessageReference != nil {
-			r.RefMessageID =
-				msg.MessageReference.MessageID
-		}
-		replies = append(replies, r)
-	}
-	return replies, nil
-}
-
 // SendHint sends a plain text message (not an embed) to
 // the DM channel, e.g. to tell the user to use Discord's
 // Reply feature.
@@ -444,48 +388,6 @@ func isNotificationEmbed(
 	return false
 }
 
-// FetchRecentUserMessages fetches the most recent
-// messages from the DM channel sent by the configured
-// user. Used by the daemon to check for commands like
-// /clear even when no sessions are actively notified.
-func (c *Client) FetchRecentUserMessages(
-	limit int,
-) ([]Reply, error) {
-	if err := c.checkRateLimit(); err != nil {
-		return nil, err
-	}
-	if err := c.ensureDMChannel(); err != nil {
-		return nil, err
-	}
-
-	msgs, err := c.session.ChannelMessages(
-		c.dmChannel, limit, "", "", "",
-	)
-	c.handleRateLimit(err)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"fetch messages: %w", err)
-	}
-
-	var replies []Reply
-	for _, msg := range msgs {
-		if msg.Author == nil ||
-			msg.Author.ID != c.userID {
-			continue
-		}
-		r := Reply{
-			Content:   msg.Content,
-			MessageID: msg.ID,
-		}
-		if msg.MessageReference != nil {
-			r.RefMessageID =
-				msg.MessageReference.MessageID
-		}
-		replies = append(replies, r)
-	}
-	return replies, nil
-}
-
 // Reaction emojis used for quick replies.
 const (
 	ReactionYes  = "✅"
@@ -543,37 +445,6 @@ func (c *Client) RemoveAllReactions(
 		c.handleRateLimit(err)
 	}
 	return err
-}
-
-// FetchUserReaction returns which of the quick-reply
-// emojis the configured user has reacted with on the
-// given message. Returns the first match found in
-// priority order: ✅, ❌, 👀.
-func (c *Client) FetchUserReaction(
-	msgID string,
-) (string, error) {
-	if err := c.checkRateLimit(); err != nil {
-		return "", err
-	}
-	for _, emoji := range []string{
-		ReactionYes, ReactionNo, ReactionLook,
-	} {
-		users, err := c.session.MessageReactions(
-			c.dmChannel, msgID, emoji, 10, "", "",
-		)
-		if err != nil {
-			c.handleRateLimit(err)
-			return "", fmt.Errorf(
-				"fetch reaction %s: %w", emoji, err,
-			)
-		}
-		for _, u := range users {
-			if u.ID == c.userID {
-				return emoji, nil
-			}
-		}
-	}
-	return "", nil
 }
 
 // EditEmbedColor edits a message to change its embed
