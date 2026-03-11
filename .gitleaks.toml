@@ -1,0 +1,6 @@
+[extend]
+useDefault = true
+
+[[allowlist]]
+description = "Test fixture in sanitize_test.go"
+paths = ["internal/sanitize/sanitize_test.go"]
