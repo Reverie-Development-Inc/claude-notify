@@ -1,6 +1,6 @@
-// Package daemon watches session metadata files, manages
-// notification timers, sends Discord DMs, polls for replies,
-// and writes replies to session FIFOs.
+// Package daemon watches session metadata files, sends
+// Discord DMs, handles gateway events, and writes replies
+// to session FIFOs.
 package daemon
 
 import (
@@ -19,22 +19,13 @@ import (
 
 // Daemon is the orchestration brain of claude-notify. It
 // periodically scans session metadata files, sends Discord
-// DMs when sessions have been waiting too long, and injects
-// replies back into sessions via FIFOs.
+// DMs when sessions have been waiting too long, and handles
+// gateway events to inject replies back into sessions.
 type Daemon struct {
-	cfg             *config.Config
-	discord         *discord.Client
-	stateDir        string
-	pollInterval    time.Duration
-	lastProcessedID string
-	hintedMsgIDs    map[string]bool
-	// lastCmdCheckID tracks the last DM message checked
-	// for /clear commands, to avoid re-processing.
-	lastCmdCheckID string
-	// hasEverNotified gates command polling — we only
-	// start checking for /clear after sending at least
-	// one notification (so we don't poll an empty DM).
-	hasEverNotified bool
+	cfg          *config.Config
+	discord      *discord.Client
+	stateDir     string
+	pollInterval time.Duration
 }
 
 // New creates a Daemon with the given config and Discord
@@ -47,13 +38,12 @@ func New(
 		discord:      dc,
 		stateDir:     cfg.StateDir(),
 		pollInterval: 10 * time.Second,
-		hintedMsgIDs: make(map[string]bool),
 	}
 }
 
 // Run starts the daemon loop. It cleans stale sessions on
-// startup, then ticks every pollInterval until ctx is
-// cancelled.
+// startup, registers slash commands, then selects on gateway
+// event channels and a tick timer until ctx is cancelled.
 func (d *Daemon) Run(ctx context.Context) error {
 	if err := os.MkdirAll(d.stateDir, 0700); err != nil {
 		return fmt.Errorf("mkdir state: %w", err)
@@ -61,9 +51,23 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 	d.cleanStaleSessions()
 
-	// Start command polling immediately — there may be
-	// orphaned notifications from a previous run.
-	d.hasEverNotified = true
+	// Register slash commands after gateway is ready.
+	go func() {
+		for i := 0; i < 10; i++ {
+			if err := d.discord.RegisterCommands(); err != nil {
+				log.Printf(
+					"register commands (attempt %d): %v",
+					i+1, err,
+				)
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			return
+		}
+		log.Print(
+			"WARNING: failed to register slash " +
+				"commands after 10 attempts")
+	}()
 
 	ticker := time.NewTicker(d.pollInterval)
 	defer ticker.Stop()
@@ -75,15 +79,25 @@ func (d *Daemon) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			log.Print("daemon shutting down")
 			return nil
+
 		case <-ticker.C:
 			d.tick()
+
+		case ev := <-d.discord.Replies:
+			d.handleReply(ev)
+
+		case ev := <-d.discord.Reactions:
+			d.handleReaction(ev)
+
+		case cmd := <-d.discord.Clears:
+			d.handleClear(cmd)
 		}
 	}
 }
 
 // tick runs one iteration of the daemon loop: list all
-// sessions, clean dead ones, send notifications for those
-// waiting long enough, and process replies centrally.
+// sessions, clean dead ones, dismiss stale notifications,
+// and send notifications for sessions waiting long enough.
 func (d *Daemon) tick() {
 	sessions, err := session.List(d.stateDir)
 	if err != nil {
@@ -91,7 +105,6 @@ func (d *Daemon) tick() {
 		return
 	}
 
-	var notified []*session.Metadata
 	for _, meta := range sessions {
 		// Clean up dead sessions.
 		if !isProcessAlive(meta.PID) {
@@ -134,26 +147,6 @@ func (d *Daemon) tick() {
 		if shouldNotify(meta, delay) {
 			d.sendNotification(meta)
 		}
-
-		if meta.NotificationSent &&
-			meta.NotificationMsgID != "" {
-			notified = append(notified, meta)
-		}
-	}
-
-	if len(notified) > 0 {
-		d.processReplies(notified)
-	}
-
-	// Process reactions on notification messages
-	if len(notified) > 0 {
-		d.processReactions(notified)
-	}
-
-	// Check for /clear commands even when no sessions
-	// are currently notified (handles orphaned embeds).
-	if d.hasEverNotified {
-		d.processCommands()
 	}
 }
 
@@ -226,135 +219,120 @@ func (d *Daemon) sendNotification(
 			"failed to update metadata: %v", err,
 		)
 	}
-	d.hasEverNotified = true
 	log.Printf(
 		"sent notification for session %d "+
 			"(msg: %s)", meta.PID, msgID,
 	)
 }
 
-// processReplies fetches replies from Discord and routes
-// them to the correct session using Discord reply-to
-// references. Falls back to single-session routing when
-// only one session is waiting.
-func (d *Daemon) processReplies(
-	notified []*session.Metadata,
-) {
-	// Determine the "after" cursor for fetching.
-	afterID := d.lastProcessedID
-	if afterID == "" {
-		// Use the earliest notification msg ID.
-		afterID = notified[0].NotificationMsgID
-		for _, m := range notified[1:] {
-			// Discord snowflake IDs are chronological;
-			// smaller ID = earlier message.
-			if m.NotificationMsgID < afterID {
-				afterID = m.NotificationMsgID
-			}
-		}
-	}
-
-	replies, err := d.discord.FetchReplies(afterID)
-	if err != nil {
-		log.Printf("fetch replies: %v", err)
+// handleReply processes an inbound reply from the gateway.
+// It routes by reply-to reference when available, falls
+// back to single-session routing, or sends a hint.
+func (d *Daemon) handleReply(ev discord.ReplyEvent) {
+	lower := strings.ToLower(
+		strings.TrimSpace(ev.Content))
+	if strings.HasPrefix(lower, "/clear") {
 		return
 	}
 
-	// Build lookup: notification msg ID -> session.
-	byMsgID := make(map[string]*session.Metadata)
-	for _, m := range notified {
-		byMsgID[m.NotificationMsgID] = m
+	if ev.RefMessageID != "" {
+		meta := d.findSessionByMsgID(ev.RefMessageID)
+		if meta != nil {
+			d.deliverReplyFrom(
+				meta, ev.Content, ev.MessageID,
+			)
+			return
+		}
+		_ = d.discord.SendHint(
+			"That session has already received " +
+				"a response. No action needed.")
+		return
 	}
 
-	for _, reply := range replies {
-		// Update cursor so we don't re-process.
-		d.lastProcessedID = reply.MessageID
-
-		// Handle /clear command.
-		lower := strings.ToLower(
-			strings.TrimSpace(reply.Content))
-		if strings.HasPrefix(lower, "/clear") {
-			// Already handled by processCommands,
-			// but mark as seen to skip hint.
-			d.lastCmdCheckID = reply.MessageID
-			continue
-		}
-
-		// Route by reply-to reference.
-		if reply.RefMessageID != "" {
-			meta, ok := byMsgID[reply.RefMessageID]
-			if ok {
-				d.deliverReplyFrom(
-					meta, reply.Content, reply.MessageID,
-				)
-				delete(byMsgID, reply.RefMessageID)
-				continue
-			}
-			// Reply-to a notification whose session
-			// already resumed — let user know.
-			if !d.hintedMsgIDs[reply.MessageID] {
-				d.hintedMsgIDs[reply.MessageID] = true
-				_ = d.discord.SendHint(
-					"That session has already " +
-						"received a response. " +
-						"No action needed.")
-			}
-			continue
-		}
-
-		// Bare message (no reply-to) — always hint.
-		if !d.hintedMsgIDs[reply.MessageID] {
-			d.hintedMsgIDs[reply.MessageID] = true
-			hint := "Trying to reply to a Claude " +
-				"Code session? Use Discord's " +
-				"**Reply** feature (swipe left " +
-				"on mobile, right-click → Reply " +
-				"on desktop) on the notification " +
-				"you want to respond to."
-			if err := d.discord.SendHint(
-				hint,
-			); err != nil {
-				log.Printf("send hint: %v", err)
-			}
-		}
+	sessions := d.notifiedSessions()
+	if len(sessions) == 1 {
+		d.deliverReplyFrom(
+			sessions[0], ev.Content, ev.MessageID,
+		)
+		return
 	}
+
+	_ = d.discord.SendHint(
+		"Use Discord's **Reply** feature " +
+			"(swipe left on mobile, right-click " +
+			"→ Reply on desktop) on the " +
+			"notification you want to respond to.")
 }
 
-// processReactions checks for user reactions on
-// active notification messages and delivers them
-// as replies.
-func (d *Daemon) processReactions(
-	notified []*session.Metadata,
+// handleReaction processes an inbound reaction from the
+// gateway. It looks up the session by message ID and
+// delivers the expanded emoji text.
+func (d *Daemon) handleReaction(
+	ev discord.ReactionEvent,
 ) {
-	for _, meta := range notified {
-		if meta.NotificationMsgID == "" {
-			continue
-		}
-		emoji, err := d.discord.FetchUserReaction(
-			meta.NotificationMsgID,
-		)
-		if err != nil {
-			log.Printf(
-				"reaction poll error for %d: %v",
-				meta.PID, err,
-			)
-			continue
-		}
-		if emoji == "" {
-			continue
-		}
-
-		text := discord.ExpandReaction(emoji)
-		if text == "" {
-			continue
-		}
-
-		log.Printf(
-			"reaction %s from user on session %d",
-			emoji, meta.PID,
-		)
-		d.deliverReply(meta, text)
+	meta := d.findSessionByMsgID(ev.MessageID)
+	if meta == nil {
+		return
 	}
+
+	text := discord.ExpandReaction(ev.Emoji)
+	if text == "" {
+		return
+	}
+
+	log.Printf(
+		"reaction %s from user on session %d",
+		ev.Emoji, meta.PID,
+	)
+	d.deliverReply(meta, text)
+}
+
+// handleClear processes an inbound /clear slash command
+// from the gateway. It clears notifications and responds
+// to the interaction.
+func (d *Daemon) handleClear(cmd discord.ClearCommand) {
+	result := d.clearNotifications(cmd.SessionID)
+	if err := d.discord.RespondToInteraction(
+		cmd.Interaction, result,
+	); err != nil {
+		log.Printf("respond to /clear: %v", err)
+	}
+	log.Printf("clear command: %s", result)
+}
+
+// findSessionByMsgID returns the session whose
+// NotificationMsgID matches the given Discord message ID,
+// or nil if no match is found.
+func (d *Daemon) findSessionByMsgID(
+	msgID string,
+) *session.Metadata {
+	sessions, err := session.List(d.stateDir)
+	if err != nil {
+		return nil
+	}
+	for _, meta := range sessions {
+		if meta.NotificationMsgID == msgID {
+			return meta
+		}
+	}
+	return nil
+}
+
+// notifiedSessions returns all sessions that currently
+// have an active notification in Discord.
+func (d *Daemon) notifiedSessions() []*session.Metadata {
+	sessions, err := session.List(d.stateDir)
+	if err != nil {
+		return nil
+	}
+	var notified []*session.Metadata
+	for _, meta := range sessions {
+		if meta.NotificationSent &&
+			meta.NotificationMsgID != "" {
+			notified = append(notified, meta)
+		}
+	}
+	return notified
 }
 
 // ColorResolved is the grey color for handled
@@ -437,42 +415,6 @@ func (d *Daemon) deliverReplyFrom(
 		"delivered reply to session %d, "+
 			"remote mode ON", meta.PID,
 	)
-}
-
-// processCommands checks recent DM messages for /clear
-// commands. Runs every tick independently of whether any
-// sessions are currently notified, so orphaned embeds can
-// still be cleared.
-func (d *Daemon) processCommands() {
-	msgs, err := d.discord.FetchRecentUserMessages(5)
-	if err != nil {
-		return // silent — don't spam logs
-	}
-	for _, msg := range msgs {
-		// Skip already-processed messages.
-		if msg.MessageID <= d.lastCmdCheckID {
-			continue
-		}
-		d.lastCmdCheckID = msg.MessageID
-
-		content := strings.TrimSpace(msg.Content)
-		lower := strings.ToLower(content)
-		if !strings.HasPrefix(lower, "/clear") {
-			continue
-		}
-
-		// Parse optional session ID.
-		args := strings.Fields(content)[1:]
-		var sessionID string
-		if len(args) > 0 &&
-			strings.ToLower(args[0]) != "all" {
-			sessionID = args[0]
-		}
-
-		result := d.clearNotifications(sessionID)
-		_ = d.discord.SendHint(result)
-		log.Printf("clear command: %s", result)
-	}
 }
 
 // clearNotifications clears notifications in two ways:
@@ -582,4 +524,3 @@ func (d *Daemon) cleanStaleSessions() {
 		}
 	}
 }
-

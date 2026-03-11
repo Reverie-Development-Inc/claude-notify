@@ -126,6 +126,15 @@ func UpdateStatus(
 		m.NotificationMsgID = ""
 		m.SkipNotification = false
 		m.NotifySummary = ""
+		// Exit remote mode if this activation is NOT
+		// from a recent FIFO injection (user returned
+		// to terminal themselves).
+		if m.RemoteMode && (m.LastInjectedAt == 0 ||
+			time.Since(
+				time.Unix(m.LastInjectedAt, 0),
+			) > 30*time.Second) {
+			m.RemoteMode = false
+		}
 	}
 
 	return Write(path, m)

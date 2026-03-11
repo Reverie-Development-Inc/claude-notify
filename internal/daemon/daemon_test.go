@@ -94,6 +94,20 @@ func TestShouldNotify_RemoteMode(t *testing.T) {
 	}
 }
 
+func TestShouldNotify_RemoteModeExpired(t *testing.T) {
+	meta := &session.Metadata{
+		Status:     session.StatusWaiting,
+		LastStop:   time.Now().Add(-20 * time.Second),
+		RemoteMode: false,
+	}
+	if shouldNotify(meta, 15*time.Minute) {
+		t.Error(
+			"should not notify at 20s with " +
+				"15min delay and RemoteMode off",
+		)
+	}
+}
+
 func TestIsProcessAlive(t *testing.T) {
 	if !isProcessAlive(os.Getpid()) {
 		t.Error("current process should be alive")

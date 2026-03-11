@@ -11,6 +11,28 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
+// ReplyEvent is sent when a user replies to a
+// notification in the DM channel.
+type ReplyEvent struct {
+	Content      string
+	MessageID    string
+	RefMessageID string
+}
+
+// ReactionEvent is sent when a user reacts to a
+// notification message.
+type ReactionEvent struct {
+	MessageID string
+	Emoji     string
+}
+
+// ClearCommand is sent when a user invokes the
+// /clear slash command.
+type ClearCommand struct {
+	SessionID   string
+	Interaction interface{} // *discordgo.Interaction
+}
+
 // Client wraps a discordgo session for sending DM
 // notifications and polling for user replies.
 type Client struct {
@@ -20,10 +42,20 @@ type Client struct {
 	validator  *Validator
 	retryAfter time.Time
 	mu         sync.Mutex
+
+	// Gateway event channels — daemon selects on these.
+	Replies   chan ReplyEvent
+	Reactions chan ReactionEvent
+	Clears    chan ClearCommand
+
+	// appID is the bot's application ID, needed for
+	// slash command registration.
+	appID string
 }
 
-// NewClient creates a Discord REST client. The token
-// should be a bot token; userID is the Discord user to DM.
+// NewClient creates a Discord client with a persistent
+// gateway connection. The token should be a bot token;
+// userID is the Discord user to DM.
 func NewClient(
 	token, userID string,
 ) (*Client, error) {
@@ -31,11 +63,34 @@ func NewClient(
 	if err != nil {
 		return nil, fmt.Errorf("create session: %w", err)
 	}
-	return &Client{
+
+	// Minimal intents: DM messages + DM reactions.
+	s.Identify.Intents =
+		discordgo.IntentsDirectMessages |
+			discordgo.IntentsDirectMessageReactions
+
+	c := &Client{
 		session:   s,
 		userID:    userID,
 		validator: NewValidator(userID),
-	}, nil
+		Replies:   make(chan ReplyEvent, 16),
+		Reactions: make(chan ReactionEvent, 16),
+		Clears:    make(chan ClearCommand, 4),
+	}
+
+	// Register gateway event handlers.
+	s.AddHandler(c.onReady)
+	s.AddHandler(c.onMessageCreate)
+	s.AddHandler(c.onMessageReactionAdd)
+	s.AddHandler(c.onInteractionCreate)
+
+	// Open the gateway connection.
+	if err := s.Open(); err != nil {
+		return nil, fmt.Errorf(
+			"open gateway: %w", err)
+	}
+
+	return c, nil
 }
 
 // ensureDMChannel opens (or reuses) a DM channel with
@@ -148,62 +203,6 @@ func (c *Client) SendNotification(
 	return msg.ID, nil
 }
 
-// Reply represents a validated user reply with routing
-// info.
-type Reply struct {
-	Content      string
-	MessageID    string
-	// RefMessageID is the ID of the message this replies
-	// to (Discord reply-to). Empty if bare message.
-	RefMessageID string
-}
-
-// FetchReplies fetches recent messages from the DM
-// channel sent after afterMsgID by the expected user.
-// Returns validated replies with routing information.
-func (c *Client) FetchReplies(
-	afterMsgID string,
-) ([]Reply, error) {
-	if err := c.checkRateLimit(); err != nil {
-		return nil, err
-	}
-	if err := c.ensureDMChannel(); err != nil {
-		return nil, err
-	}
-
-	msgs, err := c.session.ChannelMessages(
-		c.dmChannel, 10, "", afterMsgID, "",
-	)
-	c.handleRateLimit(err)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"fetch messages: %w", err,
-		)
-	}
-
-	var replies []Reply
-	for _, msg := range msgs {
-		if msg.Author == nil {
-			continue
-		}
-		if err := c.validator.Validate(
-			msg.Author.ID, msg.Timestamp,
-		); err != nil {
-			continue
-		}
-		r := Reply{
-			Content:   msg.Content,
-			MessageID: msg.ID,
-		}
-		if msg.MessageReference != nil {
-			r.RefMessageID =
-				msg.MessageReference.MessageID
-		}
-		replies = append(replies, r)
-	}
-	return replies, nil
-}
-
 // SendHint sends a plain text message (not an embed) to
 // the DM channel, e.g. to tell the user to use Discord's
 // Reply feature.
@@ -241,11 +240,11 @@ func (c *Client) DeleteMessage(msgID string) error {
 	return nil
 }
 
-// ClearNotificationMessages scans recent DM messages for
-// notification embeds sent by the bot and deletes them.
-// If sessionFilter is non-empty, only deletes embeds
-// whose footer matches the given session ID. Returns the
-// number of messages deleted.
+// ClearNotificationMessages scans the DM channel for
+// notification embeds and deletes them. Paginates
+// through messages up to 14 days old. Uses bulk delete
+// when possible (messages < 14 days old, 2-100 at a
+// time). Returns the number of messages deleted.
 func (c *Client) ClearNotificationMessages(
 	sessionFilter string,
 ) (int, error) {
@@ -256,58 +255,108 @@ func (c *Client) ClearNotificationMessages(
 		return 0, err
 	}
 
-	// Fetch the last 50 messages in the DM channel.
-	msgs, err := c.session.ChannelMessages(
-		c.dmChannel, 50, "", "", "",
-	)
-	c.handleRateLimit(err)
-	if err != nil {
-		return 0, fmt.Errorf(
-			"fetch DM messages: %w", err)
-	}
+	cutoff := time.Now().Add(-14 * 24 * time.Hour)
+	var toDelete []string
+	beforeID := ""
 
-	// Find our bot's user ID from the gateway state,
-	// falling back to checking if the author isn't the
-	// configured user.
-	var botID string
-	if c.session.State != nil &&
-		c.session.State.User != nil {
-		botID = c.session.State.User.ID
-	}
-
-	deleted := 0
-	for _, msg := range msgs {
-		if msg.Author == nil {
-			continue
-		}
-		// Only delete messages from the bot.
-		if botID != "" && msg.Author.ID != botID {
-			continue
-		}
-		// Must not be from the user.
-		if msg.Author.ID == c.userID {
-			continue
-		}
-		// Must have an embed with "Claude waiting"
-		// title (our notification format).
-		if !isNotificationEmbed(
-			msg, sessionFilter,
-		) {
-			continue
-		}
-
-		err := c.session.ChannelMessageDelete(
-			c.dmChannel, msg.ID,
+	// Paginate through DM history.
+	for {
+		msgs, err := c.session.ChannelMessages(
+			c.dmChannel, 100, beforeID, "", "",
 		)
 		c.handleRateLimit(err)
 		if err != nil {
-			log.Printf(
-				"delete notification msg %s: %v",
-				msg.ID, err,
-			)
-			continue
+			return 0, fmt.Errorf(
+				"fetch DM messages: %w", err)
 		}
-		deleted++
+		if len(msgs) == 0 {
+			break
+		}
+
+		pastCutoff := false
+		for _, msg := range msgs {
+			// Stop if we've gone past the 14-day
+			// bulk-delete window.
+			if msg.Timestamp.Before(cutoff) {
+				pastCutoff = true
+				break
+			}
+
+			if msg.Author == nil {
+				continue
+			}
+			if msg.Author.ID == c.userID {
+				continue
+			}
+			if !isNotificationEmbed(
+				msg, sessionFilter,
+			) {
+				continue
+			}
+			toDelete = append(toDelete, msg.ID)
+		}
+
+		if pastCutoff {
+			break
+		}
+		beforeID = msgs[len(msgs)-1].ID
+	}
+
+	if len(toDelete) == 0 {
+		return 0, nil
+	}
+
+	// Bulk delete requires 2+ messages and only works
+	// for messages < 14 days old. Single messages use
+	// regular delete.
+	deleted := 0
+	if len(toDelete) == 1 {
+		err := c.session.ChannelMessageDelete(
+			c.dmChannel, toDelete[0],
+		)
+		c.handleRateLimit(err)
+		if err == nil {
+			deleted = 1
+		}
+	} else {
+		// Bulk delete in chunks of 100.
+		for i := 0; i < len(toDelete); i += 100 {
+			end := i + 100
+			if end > len(toDelete) {
+				end = len(toDelete)
+			}
+			chunk := toDelete[i:end]
+			if len(chunk) < 2 {
+				err := c.session.ChannelMessageDelete(
+					c.dmChannel, chunk[0],
+				)
+				c.handleRateLimit(err)
+				if err == nil {
+					deleted++
+				}
+				continue
+			}
+			err := c.session.ChannelMessagesBulkDelete(
+				c.dmChannel, chunk,
+			)
+			c.handleRateLimit(err)
+			if err != nil {
+				log.Printf(
+					"bulk delete failed: %v", err)
+				// Fall back to individual deletes.
+				for _, id := range chunk {
+					err := c.session.ChannelMessageDelete(
+						c.dmChannel, id,
+					)
+					c.handleRateLimit(err)
+					if err == nil {
+						deleted++
+					}
+				}
+			} else {
+				deleted += len(chunk)
+			}
+		}
 	}
 	return deleted, nil
 }
@@ -337,48 +386,6 @@ func isNotificationEmbed(
 		}
 	}
 	return false
-}
-
-// FetchRecentUserMessages fetches the most recent
-// messages from the DM channel sent by the configured
-// user. Used by the daemon to check for commands like
-// /clear even when no sessions are actively notified.
-func (c *Client) FetchRecentUserMessages(
-	limit int,
-) ([]Reply, error) {
-	if err := c.checkRateLimit(); err != nil {
-		return nil, err
-	}
-	if err := c.ensureDMChannel(); err != nil {
-		return nil, err
-	}
-
-	msgs, err := c.session.ChannelMessages(
-		c.dmChannel, limit, "", "", "",
-	)
-	c.handleRateLimit(err)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"fetch messages: %w", err)
-	}
-
-	var replies []Reply
-	for _, msg := range msgs {
-		if msg.Author == nil ||
-			msg.Author.ID != c.userID {
-			continue
-		}
-		r := Reply{
-			Content:   msg.Content,
-			MessageID: msg.ID,
-		}
-		if msg.MessageReference != nil {
-			r.RefMessageID =
-				msg.MessageReference.MessageID
-		}
-		replies = append(replies, r)
-	}
-	return replies, nil
 }
 
 // Reaction emojis used for quick replies.
@@ -440,37 +447,6 @@ func (c *Client) RemoveAllReactions(
 	return err
 }
 
-// FetchUserReaction returns which of the quick-reply
-// emojis the configured user has reacted with on the
-// given message. Returns the first match found in
-// priority order: ✅, ❌, 👀.
-func (c *Client) FetchUserReaction(
-	msgID string,
-) (string, error) {
-	if err := c.checkRateLimit(); err != nil {
-		return "", err
-	}
-	for _, emoji := range []string{
-		ReactionYes, ReactionNo, ReactionLook,
-	} {
-		users, err := c.session.MessageReactions(
-			c.dmChannel, msgID, emoji, 10, "", "",
-		)
-		if err != nil {
-			c.handleRateLimit(err)
-			return "", fmt.Errorf(
-				"fetch reaction %s: %w", emoji, err,
-			)
-		}
-		for _, u := range users {
-			if u.ID == c.userID {
-				return emoji, nil
-			}
-		}
-	}
-	return "", nil
-}
-
 // EditEmbedColor edits a message to change its embed
 // color. Preserves existing embed content.
 func (c *Client) EditEmbedColor(
@@ -530,7 +506,157 @@ func (c *Client) NackReply(msgID string) error {
 	return err
 }
 
-// Close shuts down the discordgo session.
+// --- Gateway event handlers ---
+
+func (c *Client) onReady(
+	s *discordgo.Session, r *discordgo.Ready,
+) {
+	c.appID = r.Application.ID
+	log.Printf(
+		"gateway connected as %s (app: %s)",
+		r.User.Username, c.appID,
+	)
+}
+
+func (c *Client) onMessageCreate(
+	s *discordgo.Session,
+	m *discordgo.MessageCreate,
+) {
+	if m.Author == nil || m.Author.ID != c.userID {
+		return
+	}
+	ch, err := s.State.Channel(m.ChannelID)
+	if err != nil || ch.Type != discordgo.ChannelTypeDM {
+		return
+	}
+
+	ev := ReplyEvent{
+		Content:   m.Content,
+		MessageID: m.ID,
+	}
+	if m.MessageReference != nil {
+		ev.RefMessageID =
+			m.MessageReference.MessageID
+	}
+
+	select {
+	case c.Replies <- ev:
+	default:
+		log.Print("reply channel full, dropping")
+	}
+}
+
+func (c *Client) onMessageReactionAdd(
+	s *discordgo.Session,
+	r *discordgo.MessageReactionAdd,
+) {
+	if r.UserID != c.userID {
+		return
+	}
+	emoji := r.Emoji.Name
+	if ExpandReaction(emoji) == "" {
+		return
+	}
+
+	select {
+	case c.Reactions <- ReactionEvent{
+		MessageID: r.MessageID,
+		Emoji:     emoji,
+	}:
+	default:
+		log.Print("reaction channel full, dropping")
+	}
+}
+
+func (c *Client) onInteractionCreate(
+	s *discordgo.Session,
+	i *discordgo.InteractionCreate,
+) {
+	if i.Type !=
+		discordgo.InteractionApplicationCommand {
+		return
+	}
+	data := i.ApplicationCommandData()
+	if data.Name != "clear" {
+		return
+	}
+
+	var sessionID string
+	for _, opt := range data.Options {
+		if opt.Name == "session" {
+			sessionID = opt.StringValue()
+		}
+	}
+
+	select {
+	case c.Clears <- ClearCommand{
+		SessionID:   sessionID,
+		Interaction: i.Interaction,
+	}:
+	default:
+		log.Print("clear channel full, dropping")
+	}
+}
+
+// --- Slash command registration ---
+
+// RegisterCommands registers the /clear slash command
+// with Discord. Must be called after the gateway is
+// ready (appID is set).
+func (c *Client) RegisterCommands() error {
+	if c.appID == "" {
+		return fmt.Errorf(
+			"appID not set (gateway not ready)")
+	}
+
+	cmd := &discordgo.ApplicationCommand{
+		Name:        "clear",
+		Description: "Clear claude-notify notifications",
+		Options: []*discordgo.ApplicationCommandOption{
+			{
+				Type: discordgo.
+					ApplicationCommandOptionString,
+				Name:        "session",
+				Description: "Session ID (omit for all)",
+				Required:    false,
+			},
+		},
+	}
+
+	_, err := c.session.ApplicationCommandCreate(
+		c.appID, "", cmd,
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"register /clear command: %w", err)
+	}
+	log.Print("registered /clear slash command")
+	return nil
+}
+
+// RespondToInteraction sends an ephemeral response to a
+// slash command interaction.
+func (c *Client) RespondToInteraction(
+	interaction interface{}, content string,
+) error {
+	i, ok := interaction.(*discordgo.Interaction)
+	if !ok {
+		return fmt.Errorf("invalid interaction type")
+	}
+	return c.session.InteractionRespond(i,
+		&discordgo.InteractionResponse{
+			Type: discordgo.
+				InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{
+				Content: content,
+				Flags: discordgo.
+					MessageFlagsEphemeral,
+			},
+		},
+	)
+}
+
+// Close shuts down the discordgo session and gateway.
 func (c *Client) Close() {
 	if c.session != nil {
 		_ = c.session.Close()
