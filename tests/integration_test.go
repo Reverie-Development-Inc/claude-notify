@@ -252,6 +252,62 @@ func TestNotifyTagNone(t *testing.T) {
 	}
 }
 
+func TestRemoteModeClearedOnTerminalReturn(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.json")
+
+	m := &session.Metadata{
+		PID:            1234,
+		Status:         session.StatusWaiting,
+		RemoteMode:     true,
+		LastInjectedAt: time.Now().Add(-60 * time.Second).Unix(),
+	}
+	_ = session.Write(path, m)
+
+	err := session.UpdateStatus(
+		path, session.StatusActive, "", "", false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, _ := session.Read(path)
+	if got.RemoteMode {
+		t.Error(
+			"RemoteMode should be cleared when " +
+				"user returns to terminal (old " +
+				"LastInjectedAt)",
+		)
+	}
+}
+
+func TestRemoteModeClearedWhenNeverInjected(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.json")
+
+	m := &session.Metadata{
+		PID:        1234,
+		Status:     session.StatusWaiting,
+		RemoteMode: true,
+	}
+	_ = session.Write(path, m)
+
+	err := session.UpdateStatus(
+		path, session.StatusActive, "", "", false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, _ := session.Read(path)
+	if got.RemoteMode {
+		t.Error(
+			"RemoteMode should be cleared when " +
+				"LastInjectedAt is zero",
+		)
+	}
+}
+
 func TestRemoteModePreservation(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.json")
