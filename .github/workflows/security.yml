@@ -16,7 +16,7 @@ jobs:
     name: Trivy dependency scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Run Trivy fs scan
         uses: aquasecurity/trivy-action@0.35.0
@@ -30,7 +30,7 @@ jobs:
     name: Go Security Scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -42,7 +42,7 @@ jobs:
     name: "Secret detection"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
