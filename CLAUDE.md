@@ -18,8 +18,8 @@ Discord DM notifications for idle Claude Code sessions.
 
 - `cmd/claude-notify/main.go` — CLI entrypoint (cobra)
 - `internal/config/` — YAML + SSM config loading
-- `internal/daemon/` — session watcher, timer mgmt
-- `internal/discord/` — REST API client (DM send/poll)
+- `internal/daemon/` — session watcher, event-driven loop
+- `internal/discord/` — gateway + REST client (events in, sends out)
 - `internal/sanitize/` — message sanitization
 - `internal/session/` — metadata file read/write
 - `internal/wrapper/` — PTY relay + FIFO stdin merge
@@ -28,7 +28,7 @@ Discord DM notifications for idle Claude Code sessions.
 ## Key Patterns
 
 - AWS SDK v2 with pointer types
-- discordgo v0.28.1 for Discord REST API
+- discordgo v0.28.1 for Discord gateway + REST API
 - PTY relay via creack/pty for transparent stdin merge
 - Session metadata as JSON files in ~/.local/state/
 - FIFO files in $XDG_RUNTIME_DIR for reply injection
@@ -36,4 +36,5 @@ Discord DM notifications for idle Claude Code sessions.
 
 ## Dev Service Ports
 
-None — this is a local daemon, no network listeners.
+None — outbound websocket to Discord gateway only, no
+listening ports.

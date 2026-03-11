@@ -30,21 +30,24 @@ claude-notify wrap -- claude "$@"
 claude-notify daemon (systemd user service)
     |  watches session metadata files
     |  starts idle timer on Stop hook
-    |  sends DM after delay
-    |  polls for replies
+    |  sends DM after delay (REST)
+    |  receives replies + reactions (gateway)
+    |  handles /clear slash command
     |  writes reply -> FIFO
     |
     v
-Discord (REST API)
-    bot DM channel
-    send notification / poll replies
+Discord (gateway + REST)
+    persistent websocket for events
+    REST for sending notifications
 ```
 
 ## Prerequisites
 
 - **Go 1.24+**
 - **Discord bot** with DM permissions (Send Messages,
-  Read Message History). No server/guild permissions needed.
+  Read Message History) and `applications.commands` scope
+  for the `/clear` slash command. No server/guild
+  permissions needed.
 - **Bot token** provided via one of:
   - `CLAUDE_NOTIFY_BOT_TOKEN` environment variable, OR
   - AWS SSM Parameter Store (requires AWS account + credentials)
@@ -194,10 +197,12 @@ Config file: `~/.config/claude-notify/config.yaml`
 5. The daemon detects the idle session and starts a timer.
 6. After 15 minutes (configurable), the daemon sends a Discord
    DM with the preview and quick-reaction emojis (✅ ❌ 👀).
-7. You reply in Discord (e.g., "1" to pick a suggestion, or
-   type a full response).
-8. The daemon validates the reply (correct sender, fresh
-   timestamp), then writes it to the session's FIFO.
+7. You reply in Discord (react with an emoji, or use
+   Discord's **Reply** feature on the notification to
+   type a custom response).
+8. The daemon receives the reply instantly via the
+   Discord gateway, validates it (correct sender), then
+   writes it to the session's FIFO.
 9. Claude Code receives the reply as stdin and continues.
 10. If you type in the terminal instead, the `UserPromptSubmit`
     hook fires, cancelling the notification/polling cycle.
@@ -236,6 +241,20 @@ to type a custom response.
 
 If the session is no longer active, the bot reacts with ❌
 and sends "Session is no longer active."
+
+### `/clear` Slash Command
+
+Use the `/clear` slash command in your DM with the bot to
+remove stale notification messages:
+
+- `/clear` — removes all notification embeds (up to 14
+  days old)
+- `/clear session:ab12` — removes only notifications for
+  the given session ID
+
+The response is **ephemeral** (only visible to you), so
+`/clear` never leaves a trail in your DM history. Works
+even when no Claude Code sessions are active.
 
 ## Security
 
