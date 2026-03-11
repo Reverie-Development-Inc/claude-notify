@@ -34,9 +34,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - uses: securego/gosec@v2.22.4
-        with:
-          args: ./...
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.22.4
+      - name: Run gosec
+        run: gosec ./...
 
   gitleaks:
     name: "Secret detection"
