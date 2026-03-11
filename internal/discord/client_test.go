@@ -9,18 +9,24 @@ func TestExpandReaction(t *testing.T) {
 		emoji string
 		want  string
 	}{
-		{"✅", "Yes, continue"},
-		{"❌", "No, stop here"},
-		{"👀", "Show me what you have so far"},
-		{"🤷", ""},
+		{ReactionYes, "Yes, continue"},
+		{ReactionNo, "No, stop here"},
+		{ReactionLook, "Show me what you have so far"},
+		{"🎉", ""},
 	}
 	for _, tt := range tests {
 		got := ExpandReaction(tt.emoji)
 		if got != tt.want {
 			t.Errorf(
-				"ExpandReaction(%q) = %q, want %q",
+				"ExpandReaction(%s) = %q, want %q",
 				tt.emoji, got, tt.want,
 			)
 		}
 	}
+}
+
+func TestEventChannelTypes(t *testing.T) {
+	var _ ReplyEvent
+	var _ ReactionEvent
+	var _ ClearCommand
 }
