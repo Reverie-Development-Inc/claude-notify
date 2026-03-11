@@ -333,8 +333,7 @@ func (c *Client) ClearNotificationMessages(
 		for _, msg := range msgs {
 			// Stop if we've gone past the 14-day
 			// bulk-delete window.
-			ts, _ := msg.Timestamp.Parse()
-			if ts.Before(cutoff) {
+			if msg.Timestamp.Before(cutoff) {
 				pastCutoff = true
 				break
 			}
