@@ -46,6 +46,9 @@ type Metadata struct {
 	// ResponseDelivered prevents multiple reactions/
 	// replies from being injected (first-wins rule).
 	ResponseDelivered bool `json:"response_delivered"`
+	// ResponseDeliveredBy stores the Discord user ID
+	// of whoever responded first.
+	ResponseDeliveredBy string `json:"response_delivered_by,omitempty"`
 
 	RemoteMode       bool   `json:"remote_mode"`
 	SkipNotification bool   `json:"skip_notification"`
@@ -126,15 +129,11 @@ func UpdateStatus(
 		m.LastStop = time.Now()
 		m.LastMessagePreview = preview
 		m.NotificationSent = false
-		m.NotificationMsgID = ""
-		m.NotificationChannelMsgID = ""
-		m.NotificationChannelID = ""
 		m.ResponseDelivered = false
+		m.ResponseDeliveredBy = ""
 		m.NotifySummary = notifySummary
 		m.SkipNotification = skipNotification
 	case StatusActive:
-		m.NotificationSent = false
-		m.NotificationMsgID = ""
 		m.SkipNotification = false
 		m.NotifySummary = ""
 		// Exit remote mode if this activation is NOT
