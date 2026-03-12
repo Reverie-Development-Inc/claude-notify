@@ -387,10 +387,16 @@ func isNotificationEmbed(
 		if sessionFilter == "" {
 			return true
 		}
-		if embed.Footer != nil &&
-			strings.Contains(
-				strings.ToLower(embed.Footer.Text),
-				"#"+strings.ToLower(sessionFilter),
+		if embed.Footer == nil {
+			continue
+		}
+		// Exact match on session ID after "#".
+		parts := strings.SplitN(
+			embed.Footer.Text, "#", 2)
+		if len(parts) == 2 &&
+			strings.EqualFold(
+				strings.TrimSpace(parts[1]),
+				sessionFilter,
 			) {
 			return true
 		}
@@ -562,6 +568,11 @@ func (c *Client) onMessageReactionAdd(
 	r *discordgo.MessageReactionAdd,
 ) {
 	if r.UserID != c.userID {
+		return
+	}
+	// Only process reactions in the DM channel.
+	if c.dmChannel != "" &&
+		r.ChannelID != c.dmChannel {
 		return
 	}
 	emoji := r.Emoji.Name

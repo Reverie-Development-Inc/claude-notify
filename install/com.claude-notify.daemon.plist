@@ -7,7 +7,7 @@
   <string>com.claude-notify.daemon</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/local/bin/claude-notify</string>
+    <string>@BINARY_PATH@</string>
     <string>daemon</string>
   </array>
   <key>RunAtLoad</key>
@@ -18,13 +18,13 @@
     <false/>
   </dict>
   <key>StandardOutPath</key>
-  <string>/tmp/claude-notify.out.log</string>
+  <string>@HOME@/Library/Logs/claude-notify.out.log</string>
   <key>StandardErrorPath</key>
-  <string>/tmp/claude-notify.err.log</string>
+  <string>@HOME@/Library/Logs/claude-notify.err.log</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>HOME</key>
-    <string>/Users/REPLACE_WITH_USERNAME</string>
+    <string>@HOME@</string>
   </dict>
 </dict>
 </plist>

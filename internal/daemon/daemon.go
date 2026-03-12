@@ -244,8 +244,8 @@ func (d *Daemon) handleReply(ev discord.ReplyEvent) {
 			return
 		}
 		_ = d.discord.SendHint(
-			"That session has already received " +
-				"a response. No action needed.")
+			"Session not found. It may have " +
+				"ended or been cleaned up.")
 		return
 	}
 

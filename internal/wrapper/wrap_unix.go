@@ -7,6 +7,7 @@
 package wrapper
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -41,7 +42,17 @@ func Run(cfg Config, args []string) error {
 		fmt.Sprintf("%d.fifo", pid),
 	)
 	if err := syscall.Mkfifo(fifoPath, 0600); err != nil {
-		return fmt.Errorf("mkfifo: %w", err)
+		if !errors.Is(err, syscall.EEXIST) {
+			return fmt.Errorf("mkfifo: %w", err)
+		}
+		// Stale FIFO from crashed wrapper — remove
+		// and recreate.
+		_ = os.Remove(fifoPath)
+		if err := syscall.Mkfifo(
+			fifoPath, 0600,
+		); err != nil {
+			return fmt.Errorf("mkfifo retry: %w", err)
+		}
 	}
 	defer func() { _ = os.Remove(fifoPath) }()
 

@@ -39,7 +39,7 @@ func findSessionByAncestorPID(
 					_, _ = fmt.Sscanf(
 						fields[1],
 						"%d", &ppid)
-					if ppid == pid {
+					if ppid <= 0 || ppid == pid {
 						break
 					}
 					pid = ppid

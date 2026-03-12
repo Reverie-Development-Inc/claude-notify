@@ -60,8 +60,13 @@ func runHealth(cmd *cobra.Command, args []string) error {
 		fmt.Printf("token      FAIL  %s\n", err)
 		ok = false
 	} else {
-		masked := token[:4] + "..." +
-			token[len(token)-4:]
+		masked := token
+		if len(token) >= 8 {
+			masked = token[:4] + "..." +
+				token[len(token)-4:]
+		} else if len(token) > 2 {
+			masked = token[:2] + "..."
+		}
 		fmt.Printf("token      OK    %s\n", masked)
 	}
 
@@ -119,10 +124,10 @@ func runHealth(cmd *cobra.Command, args []string) error {
 
 	if ok {
 		fmt.Println("\nAll checks passed.")
-	} else {
-		fmt.Println("\nSome checks need attention.")
+		return nil
 	}
-	return nil
+	fmt.Println("\nSome checks need attention.")
+	return fmt.Errorf("health checks failed")
 }
 
 func isDaemonRunning() bool {

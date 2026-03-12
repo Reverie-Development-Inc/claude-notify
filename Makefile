@@ -34,7 +34,7 @@ install-service-macos: install
 		exit 1; \
 	fi
 	mkdir -p $(HOME)/Library/LaunchAgents
-	sed 's|/usr/local/bin/claude-notify|$(HOME)/.local/bin/claude-notify|g; s|REPLACE_WITH_USERNAME|$(USER)|g' \
+	sed 's|@BINARY_PATH@|$(HOME)/.local/bin/claude-notify|g; s|@HOME@|$(HOME)|g' \
 		install/com.claude-notify.daemon.plist > \
 		$(HOME)/Library/LaunchAgents/com.claude-notify.daemon.plist
 	launchctl load \
