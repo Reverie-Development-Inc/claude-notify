@@ -27,8 +27,26 @@ func TestExpandReaction(t *testing.T) {
 }
 
 func TestEventChannelTypes(t *testing.T) {
-	var _ ReplyEvent
-	var _ ReactionEvent
+	r := ReplyEvent{
+		UserID:    "u1",
+		ChannelID: "ch1",
+	}
+	if r.UserID != "u1" {
+		t.Error("ReplyEvent.UserID")
+	}
+	if r.ChannelID != "ch1" {
+		t.Error("ReplyEvent.ChannelID")
+	}
+	re := ReactionEvent{
+		UserID:    "u2",
+		ChannelID: "ch2",
+	}
+	if re.UserID != "u2" {
+		t.Error("ReactionEvent.UserID")
+	}
+	if re.ChannelID != "ch2" {
+		t.Error("ReactionEvent.ChannelID")
+	}
 	var _ ClearCommand
 	var _ ConfigureCommand
 }

@@ -23,13 +23,17 @@ type ReplyEvent struct {
 	Content      string
 	MessageID    string
 	RefMessageID string
+	ChannelID    string
+	UserID       string
 }
 
 // ReactionEvent is sent when a user reacts to a
 // notification message.
 type ReactionEvent struct {
 	MessageID string
+	ChannelID string
 	Emoji     string
+	UserID    string
 }
 
 // ClearCommand is sent when a user invokes the
@@ -680,6 +684,8 @@ func (c *Client) onMessageCreate(
 	ev := ReplyEvent{
 		Content:   m.Content,
 		MessageID: m.ID,
+		ChannelID: m.ChannelID,
+		UserID:    m.Author.ID,
 	}
 	if m.MessageReference != nil {
 		ev.RefMessageID =
@@ -708,7 +714,9 @@ func (c *Client) onMessageReactionAdd(
 	select {
 	case c.Reactions <- ReactionEvent{
 		MessageID: r.MessageID,
+		ChannelID: r.ChannelID,
 		Emoji:     emoji,
+		UserID:    r.UserID,
 	}:
 	default:
 		log.Print("reaction channel full, dropping")
