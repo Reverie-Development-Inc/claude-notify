@@ -438,7 +438,10 @@ func (d *Daemon) deliverReplyFrom(
 			meta.PID, err,
 		)
 		if replyMsgID != "" {
-			_ = d.discord.NackReply(replyMsgID)
+			_ = d.discord.NackReply(
+				d.discord.DMChannelID(),
+				replyMsgID,
+			)
 		}
 		_ = d.discord.SendHint(
 			"Session is no longer active.",
@@ -448,16 +451,24 @@ func (d *Daemon) deliverReplyFrom(
 
 	// Acknowledge the user's reply message
 	if replyMsgID != "" {
-		_ = d.discord.AckReply(replyMsgID)
+		_ = d.discord.AckReply(
+			d.discord.DMChannelID(),
+			replyMsgID,
+		)
 	}
 
 	// Resolve the notification message
 	if meta.NotificationMsgID != "" {
-		_ = d.discord.RemoveAllReactions(
-			meta.NotificationMsgID,
+		chID := d.discord.DMChannelID()
+		if meta.NotificationChannelID != "" {
+			chID = meta.NotificationChannelID
+		}
+		_ = d.discord.RemoveBotReactions(
+			chID, meta.NotificationMsgID,
 		)
-		_ = d.discord.EditEmbedColor(
-			meta.NotificationMsgID, ColorResolved,
+		_ = d.discord.EditEmbed(
+			chID, meta.NotificationMsgID,
+			"Resolved", ColorResolved,
 		)
 	}
 
@@ -549,11 +560,16 @@ func (d *Daemon) dismissNotification(
 	meta *session.Metadata,
 ) {
 	if meta.NotificationMsgID != "" {
-		_ = d.discord.RemoveAllReactions(
-			meta.NotificationMsgID,
+		chID := d.discord.DMChannelID()
+		if meta.NotificationChannelID != "" {
+			chID = meta.NotificationChannelID
+		}
+		_ = d.discord.RemoveBotReactions(
+			chID, meta.NotificationMsgID,
 		)
-		_ = d.discord.EditEmbedColor(
-			meta.NotificationMsgID, ColorResolved,
+		_ = d.discord.EditEmbed(
+			chID, meta.NotificationMsgID,
+			"Resolved", ColorResolved,
 		)
 	}
 	meta.NotificationSent = false

@@ -79,7 +79,8 @@ type Client struct {
 
 	// appID is the bot's application ID, needed for
 	// slash command registration.
-	appID string
+	appID     string
+	botUserID string
 }
 
 // NewClient creates a Discord client with a persistent
@@ -138,6 +139,11 @@ func (c *Client) ensureDMChannel() error {
 	}
 	c.dmChannel = ch.ID
 	return nil
+}
+
+// DMChannelID returns the cached DM channel ID.
+func (c *Client) DMChannelID() string {
+	return c.dmChannel
 }
 
 // checkRateLimit returns an error if we should wait
@@ -253,8 +259,8 @@ func (c *Client) SendNotification(
 		return "", fmt.Errorf("send DM: %w", err)
 	}
 
-	if reactErr := c.AddReactions(
-		msg.ID,
+	if reactErr := c.AddReactionsTo(
+		c.dmChannel, msg.ID,
 	); reactErr != nil {
 		log.Printf(
 			"failed to add reactions: %v", reactErr,
@@ -290,7 +296,7 @@ func (c *Client) SendChannelNotification(
 			"send channel notification: %w", err)
 	}
 
-	if reactErr := c.addReactionsToChannel(
+	if reactErr := c.AddReactionsTo(
 		channelID, msg.ID,
 	); reactErr != nil {
 		log.Printf(
@@ -300,30 +306,6 @@ func (c *Client) SendChannelNotification(
 
 	c.validator.SetNotificationTime(time.Now())
 	return msg.ID, nil
-}
-
-// addReactionsToChannel adds reaction emojis to a
-// message in a specific channel.
-func (c *Client) addReactionsToChannel(
-	channelID, msgID string,
-) error {
-	if err := c.checkRateLimit(); err != nil {
-		return err
-	}
-	for _, emoji := range []string{
-		ReactionYes, ReactionNo, ReactionLook,
-	} {
-		err := c.session.MessageReactionAdd(
-			channelID, msgID, emoji,
-		)
-		if err != nil {
-			c.handleRateLimit(err)
-			return fmt.Errorf(
-				"add reaction %s: %w", emoji, err,
-			)
-		}
-	}
-	return nil
 }
 
 // DeleteChannelMessage deletes a message from any
@@ -345,14 +327,21 @@ func (c *Client) DeleteChannelMessage(
 // the DM channel, e.g. to tell the user to use Discord's
 // Reply feature.
 func (c *Client) SendHint(text string) error {
-	if err := c.checkRateLimit(); err != nil {
-		return err
-	}
 	if err := c.ensureDMChannel(); err != nil {
 		return err
 	}
+	return c.SendHintTo(c.dmChannel, text)
+}
+
+// SendHintTo sends a plain text message to any channel.
+func (c *Client) SendHintTo(
+	channelID, text string,
+) error {
+	if err := c.checkRateLimit(); err != nil {
+		return err
+	}
 	_, err := c.session.ChannelMessageSend(
-		c.dmChannel, text,
+		channelID, text,
 	)
 	c.handleRateLimit(err)
 	return err
@@ -553,9 +542,11 @@ func ExpandReaction(emoji string) string {
 	return reactionMap[emoji]
 }
 
-// AddReactions adds the quick-reply reaction emojis to
-// a message. Reactions are added in order.
-func (c *Client) AddReactions(msgID string) error {
+// AddReactionsTo adds the quick-reply reaction emojis
+// to a message in any channel.
+func (c *Client) AddReactionsTo(
+	channelID, msgID string,
+) error {
 	if err := c.checkRateLimit(); err != nil {
 		return err
 	}
@@ -563,57 +554,69 @@ func (c *Client) AddReactions(msgID string) error {
 		ReactionYes, ReactionNo, ReactionLook,
 	} {
 		err := c.session.MessageReactionAdd(
-			c.dmChannel, msgID, emoji,
+			channelID, msgID, emoji,
 		)
 		if err != nil {
 			c.handleRateLimit(err)
 			return fmt.Errorf(
-				"add reaction %s: %w", emoji, err,
+				"add reaction %s: %w",
+				emoji, err,
 			)
 		}
 	}
 	return nil
 }
 
-// RemoveAllReactions removes all reactions from a
-// message (clears the reaction bar entirely).
-func (c *Client) RemoveAllReactions(
-	msgID string,
+// RemoveBotReactions removes only the bot's own
+// reactions per-emoji, preserving user reactions.
+func (c *Client) RemoveBotReactions(
+	channelID, msgID string,
 ) error {
+	if c.botUserID == "" {
+		return nil
+	}
 	if err := c.checkRateLimit(); err != nil {
 		return err
 	}
-	err := c.session.MessageReactionsRemoveAll(
-		c.dmChannel, msgID,
-	)
-	if err != nil {
-		c.handleRateLimit(err)
+	for _, emoji := range []string{
+		ReactionYes, ReactionNo, ReactionLook,
+	} {
+		err := c.session.MessageReactionRemove(
+			channelID, msgID,
+			emoji, c.botUserID,
+		)
+		if err != nil {
+			c.handleRateLimit(err)
+		}
 	}
-	return err
+	return nil
 }
 
-// EditEmbedColor edits a message to change its embed
-// color. Preserves existing embed content.
-func (c *Client) EditEmbedColor(
-	msgID string, color int,
+// EditEmbed updates the title and color of a message's
+// first embed. Channel-aware replacement for the old
+// EditEmbedColor method.
+func (c *Client) EditEmbed(
+	channelID, msgID, title string, color int,
 ) error {
 	if err := c.checkRateLimit(); err != nil {
 		return err
 	}
 	msg, err := c.session.ChannelMessage(
-		c.dmChannel, msgID,
+		channelID, msgID,
 	)
 	if err != nil {
 		c.handleRateLimit(err)
-		return fmt.Errorf("fetch message: %w", err)
+		return fmt.Errorf(
+			"fetch message: %w", err)
 	}
 	if len(msg.Embeds) == 0 {
 		return nil
 	}
 	embed := msg.Embeds[0]
+	embed.Title = title
 	embed.Color = color
 	_, err = c.session.ChannelMessageEditEmbed(
-		c.dmChannel, msgID, embed,
+		channelID, msgID, embed,
 	)
 	if err != nil {
 		c.handleRateLimit(err)
@@ -623,12 +626,14 @@ func (c *Client) EditEmbedColor(
 
 // AckReply reacts with ✅ on a user's reply message
 // to acknowledge receipt.
-func (c *Client) AckReply(msgID string) error {
+func (c *Client) AckReply(
+	channelID, msgID string,
+) error {
 	if err := c.checkRateLimit(); err != nil {
 		return err
 	}
 	err := c.session.MessageReactionAdd(
-		c.dmChannel, msgID, ReactionYes,
+		channelID, msgID, ReactionYes,
 	)
 	if err != nil {
 		c.handleRateLimit(err)
@@ -638,12 +643,14 @@ func (c *Client) AckReply(msgID string) error {
 
 // NackReply reacts with ❌ on a message to indicate
 // delivery failure.
-func (c *Client) NackReply(msgID string) error {
+func (c *Client) NackReply(
+	channelID, msgID string,
+) error {
 	if err := c.checkRateLimit(); err != nil {
 		return err
 	}
 	err := c.session.MessageReactionAdd(
-		c.dmChannel, msgID, ReactionNo,
+		channelID, msgID, ReactionNo,
 	)
 	if err != nil {
 		c.handleRateLimit(err)
@@ -657,6 +664,7 @@ func (c *Client) onReady(
 	s *discordgo.Session, r *discordgo.Ready,
 ) {
 	c.appID = r.Application.ID
+	c.botUserID = r.User.ID
 	log.Printf(
 		"gateway connected as %s (app: %s)",
 		r.User.Username, c.appID,
