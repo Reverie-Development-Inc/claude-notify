@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -126,24 +127,43 @@ func (c *Client) checkRateLimit() error {
 }
 
 // handleRateLimit checks if an error is a 429 and sets
-// the backoff timer.
+// the backoff timer. Reads the Retry-After header when
+// available, otherwise falls back to 5 seconds.
 func (c *Client) handleRateLimit(err error) {
 	if err == nil {
 		return
 	}
-	// discordgo wraps HTTP errors; check for 429.
 	var restErr *discordgo.RESTError
-	if errors.As(err, &restErr) &&
-		restErr.Response != nil &&
-		restErr.Response.StatusCode == 429 {
-		c.mu.Lock()
-		// Default backoff: 5 seconds.
-		c.retryAfter = time.Now().Add(
-			5 * time.Second)
-		c.mu.Unlock()
-		log.Printf(
-			"Discord rate limited, backing off 5s")
+	if !errors.As(err, &restErr) ||
+		restErr.Response == nil ||
+		restErr.Response.StatusCode != 429 {
+		return
 	}
+
+	backoff := 5 * time.Second
+	if ra := restErr.Response.Header.Get(
+		"Retry-After",
+	); ra != "" {
+		if secs, err := strconv.ParseFloat(
+			ra, 64,
+		); err == nil && secs > 0 {
+			backoff = time.Duration(
+				secs * float64(time.Second),
+			)
+		}
+	}
+	// Floor: at least 1 second.
+	if backoff < time.Second {
+		backoff = time.Second
+	}
+
+	c.mu.Lock()
+	c.retryAfter = time.Now().Add(backoff)
+	c.mu.Unlock()
+	log.Printf(
+		"Discord rate limited, backing off %v",
+		backoff,
+	)
 }
 
 // SendNotification sends an idle notification DM with

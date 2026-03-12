@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Reverie-Development-Inc/claude-notify/internal/config"
 	"github.com/Reverie-Development-Inc/claude-notify/internal/sanitize"
 	"github.com/Reverie-Development-Inc/claude-notify/internal/session"
 )
@@ -49,6 +50,15 @@ func runSessionUpdate(
 	var hi hookInput
 	_ = json.Unmarshal(inputData, &hi) // best-effort; empty input is valid
 
+	// Load config for preview length. Fallback to 500 if
+	// config is unavailable (hooks must be robust).
+	maxPreview := 500
+	if cfg, err := config.Load(
+		configPath(),
+	); err == nil && cfg.Notify.MaxPreviewChars > 0 {
+		maxPreview = cfg.Notify.MaxPreviewChars
+	}
+
 	// Find session metadata via env var set by wrapper.
 	metaPath := os.Getenv("CLAUDE_NOTIFY_SESSION")
 	if metaPath == "" {
@@ -76,11 +86,11 @@ func runSessionUpdate(
 	if status == session.StatusWaiting {
 		if hi.LastAssistantMessage != "" {
 			preview = sanitize.Preview(
-				hi.LastAssistantMessage, 500)
+				hi.LastAssistantMessage, maxPreview)
 		} else if hi.TranscriptPath != "" {
 			raw := extractLastAssistantMessage(
 				hi.TranscriptPath)
-			preview = sanitize.Preview(raw, 500)
+			preview = sanitize.Preview(raw, maxPreview)
 		}
 	}
 
@@ -89,7 +99,7 @@ func runSessionUpdate(
 		preview,
 	)
 	if cleaned != "" {
-		preview = sanitize.Preview(cleaned, 500)
+		preview = sanitize.Preview(cleaned, maxPreview)
 	}
 
 	return session.UpdateStatus(

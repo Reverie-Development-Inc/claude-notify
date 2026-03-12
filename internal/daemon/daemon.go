@@ -26,6 +26,11 @@ type Daemon struct {
 	discord      *discord.Client
 	stateDir     string
 	pollInterval time.Duration
+
+	// msgIDCache maps NotificationMsgID → Metadata.
+	// Rebuilt every tick() to avoid repeated dir scans
+	// on reaction/reply events.
+	msgIDCache map[string]*session.Metadata
 }
 
 // New creates a Daemon with the given config and Discord
@@ -104,6 +109,15 @@ func (d *Daemon) tick() {
 		log.Printf("list sessions: %v", err)
 		return
 	}
+
+	// Rebuild message ID cache for O(1) lookups.
+	cache := make(map[string]*session.Metadata)
+	for _, meta := range sessions {
+		if meta.NotificationMsgID != "" {
+			cache[meta.NotificationMsgID] = meta
+		}
+	}
+	d.msgIDCache = cache
 
 	for _, meta := range sessions {
 		// Clean up dead sessions.
@@ -306,6 +320,10 @@ func (d *Daemon) handleClear(cmd discord.ClearCommand) {
 func (d *Daemon) findSessionByMsgID(
 	msgID string,
 ) *session.Metadata {
+	if d.msgIDCache != nil {
+		return d.msgIDCache[msgID]
+	}
+	// Fallback if cache not yet built (pre-first tick).
 	sessions, err := session.List(d.stateDir)
 	if err != nil {
 		return nil
