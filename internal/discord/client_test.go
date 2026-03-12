@@ -9,9 +9,10 @@ func TestExpandReaction(t *testing.T) {
 		emoji string
 		want  string
 	}{
-		{ReactionYes, "Yes, continue"},
-		{ReactionNo, "No, stop here"},
-		{ReactionLook, "Show me what you have so far"},
+		{ReactionYes, "Yes or Continue, decide which " +
+			"answer makes more sense based on context."},
+		{ReactionNo, "No"},
+		{ReactionLook, "Show me additional context on this"},
 		{"🎉", ""},
 	}
 	for _, tt := range tests {

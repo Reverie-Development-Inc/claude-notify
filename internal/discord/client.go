@@ -8,8 +8,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Reverie-Development-Inc/claude-notify/internal/sanitize"
 	"github.com/bwmarrin/discordgo"
 )
+
+// embedDescLimit is Discord's maximum character count
+// for an embed description field.
+const embedDescLimit = 4096
 
 // ReplyEvent is sent when a user replies to a
 // notification in the DM channel.
@@ -162,12 +167,17 @@ func (c *Client) SendNotification(
 		body = summary
 	}
 
-	desc := fmt.Sprintf(
-		"%s\n\n"+
-			"React below, or **reply** to this "+
-			"message to type something custom.",
-		body,
-	)
+	suffix := "\n\n" +
+		"React below, or **reply** to this " +
+		"message to type something custom."
+
+	// Discord embed descriptions are capped at 4096
+	// characters. Truncate the body to fit within
+	// that limit, reserving space for the suffix.
+	maxBody := embedDescLimit - len(suffix)
+	body = sanitize.Truncate(body, maxBody)
+
+	desc := body + suffix
 
 	embed := &discordgo.MessageEmbed{
 		Title: fmt.Sprintf(
@@ -397,9 +407,10 @@ const (
 
 // reactionMap maps reaction emojis to reply text.
 var reactionMap = map[string]string{
-	ReactionYes:  "Yes, continue",
-	ReactionNo:   "No, stop here",
-	ReactionLook: "Show me what you have so far",
+	ReactionYes: "Yes or Continue, decide which " +
+		"answer makes more sense based on context.",
+	ReactionNo: "No",
+	ReactionLook: "Show me additional context on this",
 }
 
 // ExpandReaction returns the reply text for a reaction
