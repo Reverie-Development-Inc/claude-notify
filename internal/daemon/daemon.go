@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -31,6 +32,11 @@ type Daemon struct {
 	// Rebuilt every tick() to avoid repeated dir scans
 	// on reaction/reply events.
 	msgIDCache map[string]*session.Metadata
+
+	// Session number allocation.
+	sessionNumbers map[string]int // shortID→num
+	freeNumbers    []int          // sorted, low-first
+	nextNumber     int            // starts at 1
 }
 
 // New creates a Daemon with the given config and Discord
@@ -39,10 +45,12 @@ func New(
 	cfg *config.Config, dc *discord.Client,
 ) *Daemon {
 	return &Daemon{
-		cfg:          cfg,
-		discord:      dc,
-		stateDir:     cfg.StateDir(),
-		pollInterval: 10 * time.Second,
+		cfg:            cfg,
+		discord:        dc,
+		stateDir:       cfg.StateDir(),
+		pollInterval:   10 * time.Second,
+		sessionNumbers: make(map[string]int),
+		nextNumber:     1,
 	}
 }
 
@@ -773,4 +781,45 @@ func (d *Daemon) refreshAllowedUsers() {
 	) bool {
 		return drc.IsUserAllowed(userID, ownerID)
 	}
+}
+
+// allocateNumber returns a sticky session number
+// for the given shortID. Reuses the existing
+// number if already allocated, otherwise pops
+// the lowest free number or increments.
+func (d *Daemon) allocateNumber(
+	shortID string,
+) int {
+	if n, ok := d.sessionNumbers[shortID]; ok {
+		return n
+	}
+	var n int
+	if len(d.freeNumbers) > 0 {
+		n = d.freeNumbers[0]
+		d.freeNumbers = d.freeNumbers[1:]
+	} else {
+		n = d.nextNumber
+		d.nextNumber++
+	}
+	d.sessionNumbers[shortID] = n
+	return n
+}
+
+// releaseNumber frees a session number for reuse.
+func (d *Daemon) releaseNumber(shortID string) {
+	n, ok := d.sessionNumbers[shortID]
+	if !ok {
+		return
+	}
+	delete(d.sessionNumbers, shortID)
+	d.freeNumbers = append(d.freeNumbers, n)
+	sort.Ints(d.freeNumbers)
+}
+
+// sessionNumber returns the assigned number for
+// a shortID, or 0 if not allocated.
+func (d *Daemon) sessionNumber(
+	shortID string,
+) int {
+	return d.sessionNumbers[shortID]
 }

@@ -117,3 +117,71 @@ func TestIsProcessAlive(t *testing.T) {
 	}
 }
 
+func TestAllocateNumber(t *testing.T) {
+	d := &Daemon{
+		sessionNumbers: make(map[string]int),
+		nextNumber:     1,
+	}
+
+	n1 := d.allocateNumber("abc")
+	n2 := d.allocateNumber("def")
+	n3 := d.allocateNumber("ghi")
+	if n1 != 1 || n2 != 2 || n3 != 3 {
+		t.Errorf("want 1,2,3 got %d,%d,%d",
+			n1, n2, n3)
+	}
+
+	if d.allocateNumber("abc") != 1 {
+		t.Error("same shortID should return 1")
+	}
+}
+
+func TestReleaseAndRecycle(t *testing.T) {
+	d := &Daemon{
+		sessionNumbers: make(map[string]int),
+		nextNumber:     1,
+	}
+
+	d.allocateNumber("a") // 1
+	d.allocateNumber("b") // 2
+	d.allocateNumber("c") // 3
+
+	d.releaseNumber("b") // frees 2
+
+	n := d.allocateNumber("d")
+	if n != 2 {
+		t.Errorf("want recycled 2, got %d", n)
+	}
+
+	d.releaseNumber("a") // frees 1
+	d.releaseNumber("c") // frees 3
+
+	n1 := d.allocateNumber("e")
+	n2 := d.allocateNumber("f")
+	if n1 != 1 || n2 != 3 {
+		t.Errorf("want 1,3 got %d,%d", n1, n2)
+	}
+}
+
+func TestReleaseUnknown(t *testing.T) {
+	d := &Daemon{
+		sessionNumbers: make(map[string]int),
+		nextNumber:     1,
+	}
+	d.releaseNumber("nonexistent")
+}
+
+func TestSessionNumber(t *testing.T) {
+	d := &Daemon{
+		sessionNumbers: make(map[string]int),
+		nextNumber:     1,
+	}
+	d.allocateNumber("abc")
+	if d.sessionNumber("abc") != 1 {
+		t.Error("want 1 for allocated shortID")
+	}
+	if d.sessionNumber("unknown") != 0 {
+		t.Error("want 0 for unknown shortID")
+	}
+}
+
