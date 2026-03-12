@@ -11,5 +11,9 @@
 # Secrets
 .env*
 
+# Claude Code
+CLAUDE.md
+.beads/
+
 # OS
 .DS_Store
