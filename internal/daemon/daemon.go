@@ -302,7 +302,9 @@ func (d *Daemon) sendNotification(
 // handleReply processes an inbound reply from the gateway.
 // It routes by reply-to reference when available, falls
 // back to single-session routing, or sends a hint.
-func (d *Daemon) handleReply(ev discord.ReplyEvent) {
+func (d *Daemon) handleReply(
+	ev discord.ReplyEvent,
+) {
 	lower := strings.ToLower(
 		strings.TrimSpace(ev.Content))
 	if strings.HasPrefix(lower, "/clear") {
@@ -310,44 +312,84 @@ func (d *Daemon) handleReply(ev discord.ReplyEvent) {
 	}
 
 	if ev.RefMessageID != "" {
-		meta := d.findSessionByMsgID(ev.RefMessageID)
+		meta := d.findSessionByMsgID(
+			ev.RefMessageID,
+		)
 		if meta != nil {
 			if meta.ResponseDelivered {
-				_ = d.discord.SendHint(
-					"A response was already "+
-						"delivered to this session.")
+				hint := "A response was " +
+					"already delivered " +
+					"to this session."
+				if meta.ResponseDeliveredBy !=
+					"" {
+					hint = fmt.Sprintf(
+						"A response was "+
+							"already "+
+							"delivered "+
+							"by <@%s>.",
+						meta.
+							ResponseDeliveredBy,
+					)
+				}
+				_ = d.discord.SendHintTo(
+					ev.ChannelID, hint,
+				)
 				return
 			}
 			d.deliverReplyFrom(
-				meta, ev.Content, ev.MessageID,
+				meta, ev.Content,
+				ev.MessageID, ev.ChannelID,
+				ev.UserID,
 			)
 			return
 		}
-		_ = d.discord.SendHint(
-			"Session not found. It may have " +
-				"ended or been cleaned up.")
+		_ = d.discord.SendHintTo(
+			ev.ChannelID,
+			"Session not found. It may "+
+				"have ended or been "+
+				"cleaned up.",
+		)
 		return
 	}
 
 	sessions := d.notifiedSessions()
 	if len(sessions) == 1 {
 		if sessions[0].ResponseDelivered {
-			_ = d.discord.SendHint(
-				"A response was already " +
-					"delivered to this session.")
+			hint := "A response was " +
+				"already delivered " +
+				"to this session."
+			if sessions[0].
+				ResponseDeliveredBy != "" {
+				hint = fmt.Sprintf(
+					"A response was "+
+						"already "+
+						"delivered "+
+						"by <@%s>.",
+					sessions[0].
+						ResponseDeliveredBy,
+				)
+			}
+			_ = d.discord.SendHintTo(
+				ev.ChannelID, hint,
+			)
 			return
 		}
 		d.deliverReplyFrom(
-			sessions[0], ev.Content, ev.MessageID,
+			sessions[0], ev.Content,
+			ev.MessageID, ev.ChannelID,
+			ev.UserID,
 		)
 		return
 	}
 
-	_ = d.discord.SendHint(
-		"Use Discord's **Reply** feature " +
-			"(swipe left on mobile, right-click " +
-			"→ Reply on desktop) on the " +
-			"notification you want to respond to.")
+	_ = d.discord.SendHintTo(
+		ev.ChannelID,
+		"Use Discord's **Reply** feature "+
+			"(swipe left on mobile, right-"+
+			"click → Reply on desktop) on "+
+			"the notification you want to "+
+			"respond to.",
+	)
 }
 
 // handleReaction processes an inbound reaction from the
@@ -361,11 +403,11 @@ func (d *Daemon) handleReaction(
 		return
 	}
 
-	// First-wins: reject if already delivered.
 	if meta.ResponseDelivered {
 		log.Printf(
 			"reaction %s ignored — response "+
-				"already delivered for session %d",
+				"already delivered for "+
+				"session %d",
 			ev.Emoji, meta.PID,
 		)
 		return
@@ -377,10 +419,13 @@ func (d *Daemon) handleReaction(
 	}
 
 	log.Printf(
-		"reaction %s from user on session %d",
-		ev.Emoji, meta.PID,
+		"reaction %s from user %s on "+
+			"session %d",
+		ev.Emoji, ev.UserID, meta.PID,
 	)
-	d.deliverReply(meta, text)
+	d.deliverReplyFrom(
+		meta, text, "", "", ev.UserID,
+	)
 }
 
 // handleClear processes an inbound /clear slash command
@@ -435,16 +480,6 @@ func (d *Daemon) notifiedSessions() []*session.Metadata {
 	return notified
 }
 
-// deliverReply injects a reply into the session via
-// FIFO, acknowledges it in Discord, and enters remote
-// mode.
-func (d *Daemon) deliverReply(
-	meta *session.Metadata,
-	content string,
-) {
-	d.deliverReplyFrom(meta, content, "")
-}
-
 // deliverReplyFrom injects a reply and optionally
 // acknowledges a specific user message. If replyMsgID
 // is empty, the reply came from a reaction.
@@ -452,8 +487,9 @@ func (d *Daemon) deliverReplyFrom(
 	meta *session.Metadata,
 	content string,
 	replyMsgID string,
+	replyChannelID string,
+	userID string,
 ) {
-	// Prefix with [discord] for Claude awareness
 	injected := "[discord] " + content
 
 	err := writeToFIFO(meta.FIFO, injected)
@@ -464,45 +500,48 @@ func (d *Daemon) deliverReplyFrom(
 		)
 		if replyMsgID != "" {
 			_ = d.discord.NackReply(
-				d.discord.DMChannelID(),
-				replyMsgID,
+				replyChannelID, replyMsgID,
 			)
 		}
-		_ = d.discord.SendHint(
+		hintCh := replyChannelID
+		if hintCh == "" {
+			hintCh = d.notifChannelID(meta)
+		}
+		_ = d.discord.SendHintTo(
+			hintCh,
 			"Session is no longer active.",
 		)
 		return
 	}
 
-	// Acknowledge the user's reply message
+	// Acknowledge the user's reply message.
 	if replyMsgID != "" {
 		_ = d.discord.AckReply(
-			d.discord.DMChannelID(),
-			replyMsgID,
+			replyChannelID, replyMsgID,
 		)
 	}
 
-	// Resolve the notification message
+	// Edit embed to working state.
 	if meta.NotificationMsgID != "" {
-		chID := d.discord.DMChannelID()
-		if meta.NotificationChannelID != "" {
-			chID = meta.NotificationChannelID
-		}
+		chID := d.notifChannelID(meta)
+		num := d.sessionNumber(meta.ShortID)
+		title := fmt.Sprintf(
+			"Session %d: Claude is working...",
+			num,
+		)
 		_ = d.discord.RemoveBotReactions(
 			chID, meta.NotificationMsgID,
 		)
 		_ = d.discord.EditEmbed(
 			chID, meta.NotificationMsgID,
-			"Resolved", discord.ColorWorking,
+			title, discord.ColorWorking,
 		)
 	}
 
-	// Update metadata: enter remote mode, mark delivered
-	meta.NotificationSent = false
-	meta.NotificationMsgID = ""
-	meta.NotificationChannelMsgID = ""
-	meta.NotificationChannelID = ""
+	// Update metadata.
 	meta.ResponseDelivered = true
+	meta.ResponseDeliveredBy = userID
+	meta.NotificationSent = false
 	meta.Status = session.StatusActive
 	meta.RemoteMode = true
 	meta.LastInjectedAt = time.Now().Unix()
@@ -517,8 +556,7 @@ func (d *Daemon) deliverReplyFrom(
 		metaPath, meta,
 	); err != nil {
 		log.Printf(
-			"failed to update metadata: %v", err,
-		)
+			"update metadata: %v", err)
 	}
 
 	log.Printf(
