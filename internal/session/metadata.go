@@ -39,6 +39,14 @@ type Metadata struct {
 	NotificationSent  bool   `json:"notification_sent"`
 	NotificationMsgID string `json:"notification_msg_id,omitempty"`
 
+	// Channel-mode notification tracking.
+	NotificationChannelID    string `json:"notification_channel_id,omitempty"`
+	NotificationChannelMsgID string `json:"notification_channel_msg_id,omitempty"`
+
+	// ResponseDelivered prevents multiple reactions/
+	// replies from being injected (first-wins rule).
+	ResponseDelivered bool `json:"response_delivered"`
+
 	RemoteMode       bool   `json:"remote_mode"`
 	SkipNotification bool   `json:"skip_notification"`
 	NotifySummary    string `json:"notify_summary,omitempty"`
@@ -119,6 +127,9 @@ func UpdateStatus(
 		m.LastMessagePreview = preview
 		m.NotificationSent = false
 		m.NotificationMsgID = ""
+		m.NotificationChannelMsgID = ""
+		m.NotificationChannelID = ""
+		m.ResponseDelivered = false
 		m.NotifySummary = notifySummary
 		m.SkipNotification = skipNotification
 	case StatusActive:

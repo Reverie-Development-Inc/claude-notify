@@ -56,6 +56,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 	d.cleanStaleSessions()
 
+	// Load discord runtime config and set up user
+	// authorization callback.
+	config.LoadDiscordRuntimeConfig(d.stateDir)
+	d.refreshAllowedUsers()
+
 	// Register slash commands after gateway is ready.
 	go func() {
 		for i := 0; i < 10; i++ {
@@ -96,6 +101,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 		case cmd := <-d.discord.Clears:
 			d.handleClear(cmd)
+
+		case cmd := <-d.discord.Configures:
+			d.handleConfigure(cmd)
 		}
 	}
 }
@@ -120,9 +128,10 @@ func (d *Daemon) tick() {
 	d.msgIDCache = cache
 
 	for _, meta := range sessions {
-		// Clean up dead sessions.
+		// Clean up dead sessions — auto-clear Discord
+		// messages instead of just greying them out.
 		if !isProcessAlive(meta.PID) {
-			d.dismissNotification(meta)
+			d.autoCleanNotification(meta)
 			path := filepath.Join(
 				d.stateDir,
 				fmt.Sprintf("%d.json", meta.PID),
@@ -199,19 +208,40 @@ func shouldNotify(
 	return elapsed >= delay
 }
 
-// sendNotification sends a Discord DM for the given session
-// and updates the metadata file with the notification state.
+// sendNotification sends a Discord notification for the
+// given session. Posts to configured channel if set,
+// otherwise sends a DM.
 func (d *Daemon) sendNotification(
 	meta *session.Metadata,
 ) {
 	projectName := filepath.Base(meta.CWD)
+	drc := config.GetDiscordRuntimeConfig()
 
-	msgID, err := d.discord.SendNotification(
-		projectName,
-		meta.ShortID,
-		meta.LastMessagePreview,
-		meta.NotifySummary,
-	)
+	var msgID string
+	var err error
+
+	if drc.NotificationChannel != "" {
+		msgID, err = d.discord.SendChannelNotification(
+			drc.NotificationChannel,
+			projectName,
+			meta.ShortID,
+			meta.LastMessagePreview,
+			meta.NotifySummary,
+		)
+		if err == nil {
+			meta.NotificationChannelID =
+				drc.NotificationChannel
+			meta.NotificationChannelMsgID = msgID
+		}
+	} else {
+		msgID, err = d.discord.SendNotification(
+			projectName,
+			meta.ShortID,
+			meta.LastMessagePreview,
+			meta.NotifySummary,
+		)
+	}
+
 	if err != nil {
 		log.Printf(
 			"failed to send notification for %d: %v",
@@ -222,6 +252,7 @@ func (d *Daemon) sendNotification(
 
 	meta.NotificationSent = true
 	meta.NotificationMsgID = msgID
+	meta.ResponseDelivered = false
 	metaPath := filepath.Join(
 		d.stateDir,
 		fmt.Sprintf("%d.json", meta.PID),
@@ -252,6 +283,12 @@ func (d *Daemon) handleReply(ev discord.ReplyEvent) {
 	if ev.RefMessageID != "" {
 		meta := d.findSessionByMsgID(ev.RefMessageID)
 		if meta != nil {
+			if meta.ResponseDelivered {
+				_ = d.discord.SendHint(
+					"A response was already "+
+						"delivered to this session.")
+				return
+			}
 			d.deliverReplyFrom(
 				meta, ev.Content, ev.MessageID,
 			)
@@ -265,6 +302,12 @@ func (d *Daemon) handleReply(ev discord.ReplyEvent) {
 
 	sessions := d.notifiedSessions()
 	if len(sessions) == 1 {
+		if sessions[0].ResponseDelivered {
+			_ = d.discord.SendHint(
+				"A response was already " +
+					"delivered to this session.")
+			return
+		}
 		d.deliverReplyFrom(
 			sessions[0], ev.Content, ev.MessageID,
 		)
@@ -286,6 +329,16 @@ func (d *Daemon) handleReaction(
 ) {
 	meta := d.findSessionByMsgID(ev.MessageID)
 	if meta == nil {
+		return
+	}
+
+	// First-wins: reject if already delivered.
+	if meta.ResponseDelivered {
+		log.Printf(
+			"reaction %s ignored — response "+
+				"already delivered for session %d",
+			ev.Emoji, meta.PID,
+		)
 		return
 	}
 
@@ -408,9 +461,12 @@ func (d *Daemon) deliverReplyFrom(
 		)
 	}
 
-	// Update metadata: enter remote mode
+	// Update metadata: enter remote mode, mark delivered
 	meta.NotificationSent = false
 	meta.NotificationMsgID = ""
+	meta.NotificationChannelMsgID = ""
+	meta.NotificationChannelID = ""
+	meta.ResponseDelivered = true
 	meta.Status = session.StatusActive
 	meta.RemoteMode = true
 	meta.LastInjectedAt = time.Now().Unix()
@@ -540,5 +596,167 @@ func (d *Daemon) cleanStaleSessions() {
 				meta.PID,
 			)
 		}
+	}
+}
+
+// autoCleanNotification deletes Discord notification
+// messages when a session ends (process dies). This is
+// fire-and-forget — failure to delete does not block
+// session cleanup.
+func (d *Daemon) autoCleanNotification(
+	meta *session.Metadata,
+) {
+	if meta.NotificationMsgID != "" {
+		err := d.discord.DeleteMessage(
+			meta.NotificationMsgID,
+		)
+		if err != nil {
+			log.Printf(
+				"auto-clear DM msg %s: %v",
+				meta.NotificationMsgID, err,
+			)
+		}
+	}
+	if meta.NotificationChannelMsgID != "" &&
+		meta.NotificationChannelID != "" {
+		err := d.discord.DeleteChannelMessage(
+			meta.NotificationChannelID,
+			meta.NotificationChannelMsgID,
+		)
+		if err != nil {
+			log.Printf(
+				"auto-clear channel msg %s: %v",
+				meta.NotificationChannelMsgID, err,
+			)
+		}
+	}
+	log.Printf(
+		"auto-cleared notifications for dead "+
+			"session %d", meta.PID,
+	)
+}
+
+// handleConfigure processes /configure slash commands.
+func (d *Daemon) handleConfigure(
+	cmd discord.ConfigureCommand,
+) {
+	drc := config.GetDiscordRuntimeConfig()
+	var response string
+
+	switch cmd.Subcommand {
+	case "user":
+		response = d.handleConfigureUser(
+			drc, cmd.Action, cmd.Value)
+	case "channel":
+		response = d.handleConfigureChannel(
+			drc, cmd.Action, cmd.Value)
+	default:
+		response = "Unknown subcommand: " +
+			cmd.Subcommand
+	}
+
+	if err := d.discord.RespondToInteraction(
+		cmd.Interaction, response,
+	); err != nil {
+		log.Printf("respond to /configure: %v", err)
+	}
+}
+
+func (d *Daemon) handleConfigureUser(
+	drc *config.DiscordRuntimeConfig,
+	action, value string,
+) string {
+	switch action {
+	case "add":
+		if value == "" {
+			return "User ID required."
+		}
+		if !drc.AddUser(value) {
+			return "User " + value +
+				" is already allowed."
+		}
+		if err := config.SaveDiscordRuntimeConfig(
+			d.stateDir, drc,
+		); err != nil {
+			return "Error saving config: " +
+				err.Error()
+		}
+		d.refreshAllowedUsers()
+		return "Added user " + value +
+			" to allowed list."
+	case "remove":
+		if value == "" {
+			return "User ID required."
+		}
+		if !drc.RemoveUser(value) {
+			return "User " + value + " not found."
+		}
+		if err := config.SaveDiscordRuntimeConfig(
+			d.stateDir, drc,
+		); err != nil {
+			return "Error saving config: " +
+				err.Error()
+		}
+		d.refreshAllowedUsers()
+		return "Removed user " + value + "."
+	case "list":
+		if len(drc.AllowedUsers) == 0 {
+			return "No additional users " +
+				"(owner always allowed)."
+		}
+		return "Allowed users: " +
+			strings.Join(drc.AllowedUsers, ", ")
+	default:
+		return "Unknown action: " + action
+	}
+}
+
+func (d *Daemon) handleConfigureChannel(
+	drc *config.DiscordRuntimeConfig,
+	action, value string,
+) string {
+	switch action {
+	case "set":
+		if value == "" {
+			return "Channel ID required."
+		}
+		drc.NotificationChannel = value
+		if err := config.SaveDiscordRuntimeConfig(
+			d.stateDir, drc,
+		); err != nil {
+			return "Error saving config: " +
+				err.Error()
+		}
+		return "Notifications will post to " +
+			"channel " + value + "."
+	case "clear":
+		drc.NotificationChannel = ""
+		if err := config.SaveDiscordRuntimeConfig(
+			d.stateDir, drc,
+		); err != nil {
+			return "Error saving config: " +
+				err.Error()
+		}
+		return "Notifications will use DM."
+	case "show":
+		if drc.NotificationChannel == "" {
+			return "No channel set (using DM)."
+		}
+		return "Current channel: " +
+			drc.NotificationChannel
+	default:
+		return "Unknown action: " + action
+	}
+}
+
+// refreshAllowedUsers updates the Discord client's
+// IsAllowed callback with the current runtime config.
+func (d *Daemon) refreshAllowedUsers() {
+	drc := config.GetDiscordRuntimeConfig()
+	ownerID := d.cfg.Discord.UserID
+	d.discord.IsAllowed = func(
+		userID string,
+	) bool {
+		return drc.IsUserAllowed(userID, ownerID)
 	}
 }
