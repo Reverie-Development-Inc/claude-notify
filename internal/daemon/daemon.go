@@ -117,8 +117,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 }
 
 // tick runs one iteration of the daemon loop: list all
-// sessions, clean dead ones, dismiss stale notifications,
-// and send notifications for sessions waiting long enough.
+// sessions, handle state transitions (dead → red,
+// active → green, re-wait → yellow), and send first
+// notifications for sessions waiting long enough.
 func (d *Daemon) tick() {
 	sessions, err := session.List(d.stateDir)
 	if err != nil {
@@ -126,55 +127,66 @@ func (d *Daemon) tick() {
 		return
 	}
 
-	// Rebuild message ID cache for O(1) lookups.
-	cache := make(map[string]*session.Metadata)
+	// Rebuild message ID cache.
+	cache := make(
+		map[string]*session.Metadata,
+	)
 	for _, meta := range sessions {
 		if meta.NotificationMsgID != "" {
-			cache[meta.NotificationMsgID] = meta
+			cache[meta.NotificationMsgID] =
+				meta
 		}
 	}
 	d.msgIDCache = cache
 
+	delay := time.Duration(
+		d.cfg.Notify.DelayMinutes,
+	) * time.Minute
+
 	for _, meta := range sessions {
-		// Clean up dead sessions — auto-clear Discord
-		// messages instead of just greying them out.
+		// 1. Dead PID → red → delete.
 		if !isProcessAlive(meta.PID) {
-			d.autoCleanNotification(meta)
-			path := filepath.Join(
-				d.stateDir,
-				fmt.Sprintf("%d.json", meta.PID),
-			)
-			_ = os.Remove(path)
+			d.handleDeadSession(meta)
 			continue
 		}
 
-		// User returned to session — grey out the
-		// stale Discord notification.
-		if meta.Status == session.StatusActive &&
-			meta.NotificationSent &&
-			meta.NotificationMsgID != "" {
-			// Was this a FIFO injection echo?
-			// If LastInjectedAt is within the last
-			// 30s, this is the hook firing from our
-			// own FIFO write — don't dismiss or
-			// exit remote mode.
+		// Allocate session number if new.
+		if meta.ShortID != "" {
+			d.allocateNumber(meta.ShortID)
+		}
+
+		// 2. Active + notification in waiting
+		//    state → green.
+		if meta.Status ==
+			session.StatusActive &&
+			meta.NotificationMsgID != "" &&
+			meta.NotificationSent {
+			// FIFO injection echo — skip.
 			if meta.RemoteMode &&
 				meta.LastInjectedAt > 0 &&
 				time.Since(
 					time.Unix(
-						meta.LastInjectedAt, 0,
+						meta.LastInjectedAt,
+						0,
 					),
 				) < 30*time.Second {
 				continue
 			}
-			d.dismissNotification(meta)
+			d.transitionToWorking(meta)
 			continue
 		}
 
-		delay := time.Duration(
-			d.cfg.Notify.DelayMinutes,
-		) * time.Minute
+		// 3. Waiting + has msg + needs re-wait
+		//    → yellow, re-add reactions.
+		if meta.Status ==
+			session.StatusWaiting &&
+			meta.NotificationMsgID != "" &&
+			!meta.NotificationSent {
+			d.transitionToWaiting(meta)
+			continue
+		}
 
+		// 4. First notification.
 		if shouldNotify(meta, delay) {
 			d.sendNotification(meta)
 		}
@@ -218,43 +230,49 @@ func shouldNotify(
 
 // sendNotification sends a Discord notification for the
 // given session. Posts to configured channel if set,
-// otherwise sends a DM.
+// otherwise sends a DM. Uses session number allocator.
 func (d *Daemon) sendNotification(
 	meta *session.Metadata,
 ) {
 	projectName := filepath.Base(meta.CWD)
+	sessionNum := d.allocateNumber(
+		meta.ShortID,
+	)
 	drc := config.GetDiscordRuntimeConfig()
 
 	var msgID string
 	var err error
 
 	if drc.NotificationChannel != "" {
-		msgID, err = d.discord.SendChannelNotification(
-			drc.NotificationChannel,
-			projectName,
-			meta.ShortID,
-			meta.LastMessagePreview,
-			meta.NotifySummary,
-			0,
-		)
+		msgID, err =
+			d.discord.SendChannelNotification(
+				drc.NotificationChannel,
+				projectName,
+				meta.ShortID,
+				meta.LastMessagePreview,
+				meta.NotifySummary,
+				sessionNum,
+			)
 		if err == nil {
 			meta.NotificationChannelID =
 				drc.NotificationChannel
-			meta.NotificationChannelMsgID = msgID
+			meta.NotificationChannelMsgID =
+				msgID
 		}
 	} else {
-		msgID, err = d.discord.SendNotification(
-			projectName,
-			meta.ShortID,
-			meta.LastMessagePreview,
-			meta.NotifySummary,
-			0,
-		)
+		msgID, err =
+			d.discord.SendNotification(
+				projectName,
+				meta.ShortID,
+				meta.LastMessagePreview,
+				meta.NotifySummary,
+				sessionNum,
+			)
 	}
 
 	if err != nil {
 		log.Printf(
-			"failed to send notification for %d: %v",
+			"notification for %d: %v",
 			meta.PID, err,
 		)
 		return
@@ -263,6 +281,7 @@ func (d *Daemon) sendNotification(
 	meta.NotificationSent = true
 	meta.NotificationMsgID = msgID
 	meta.ResponseDelivered = false
+	meta.ResponseDeliveredBy = ""
 	metaPath := filepath.Join(
 		d.stateDir,
 		fmt.Sprintf("%d.json", meta.PID),
@@ -271,12 +290,12 @@ func (d *Daemon) sendNotification(
 		metaPath, meta,
 	); err != nil {
 		log.Printf(
-			"failed to update metadata: %v", err,
-		)
+			"update metadata: %v", err)
 	}
 	log.Printf(
 		"sent notification for session %d "+
-			"(msg: %s)", meta.PID, msgID,
+			"(#%d, msg: %s)",
+		meta.PID, sessionNum, msgID,
 	)
 }
 
@@ -558,47 +577,6 @@ func (d *Daemon) clearNotifications(
 	}
 }
 
-// dismissNotification greys out a pending Discord
-// notification and clears reactions. Called when the
-// user returns to the session or the session dies
-// before they reply.
-func (d *Daemon) dismissNotification(
-	meta *session.Metadata,
-) {
-	if meta.NotificationMsgID != "" {
-		chID := d.discord.DMChannelID()
-		if meta.NotificationChannelID != "" {
-			chID = meta.NotificationChannelID
-		}
-		_ = d.discord.RemoveBotReactions(
-			chID, meta.NotificationMsgID,
-		)
-		_ = d.discord.EditEmbed(
-			chID, meta.NotificationMsgID,
-			"Resolved", discord.ColorWorking,
-		)
-	}
-	meta.NotificationSent = false
-	meta.NotificationMsgID = ""
-	meta.RemoteMode = false
-
-	metaPath := filepath.Join(
-		d.stateDir,
-		fmt.Sprintf("%d.json", meta.PID),
-	)
-	if err := session.Write(
-		metaPath, meta,
-	); err != nil {
-		log.Printf(
-			"failed to update metadata: %v", err,
-		)
-	}
-	log.Printf(
-		"dismissed notification for session %d",
-		meta.PID,
-	)
-}
-
 // cleanStaleSessions removes metadata files for processes
 // that are no longer running. Called once at daemon startup.
 func (d *Daemon) cleanStaleSessions() {
@@ -619,43 +597,6 @@ func (d *Daemon) cleanStaleSessions() {
 			)
 		}
 	}
-}
-
-// autoCleanNotification deletes Discord notification
-// messages when a session ends (process dies). This is
-// fire-and-forget — failure to delete does not block
-// session cleanup.
-func (d *Daemon) autoCleanNotification(
-	meta *session.Metadata,
-) {
-	if meta.NotificationMsgID != "" {
-		err := d.discord.DeleteMessage(
-			meta.NotificationMsgID,
-		)
-		if err != nil {
-			log.Printf(
-				"auto-clear DM msg %s: %v",
-				meta.NotificationMsgID, err,
-			)
-		}
-	}
-	if meta.NotificationChannelMsgID != "" &&
-		meta.NotificationChannelID != "" {
-		err := d.discord.DeleteChannelMessage(
-			meta.NotificationChannelID,
-			meta.NotificationChannelMsgID,
-		)
-		if err != nil {
-			log.Printf(
-				"auto-clear channel msg %s: %v",
-				meta.NotificationChannelMsgID, err,
-			)
-		}
-	}
-	log.Printf(
-		"auto-cleared notifications for dead "+
-			"session %d", meta.PID,
-	)
 }
 
 // handleConfigure processes /configure slash commands.
@@ -822,4 +763,147 @@ func (d *Daemon) sessionNumber(
 	shortID string,
 ) int {
 	return d.sessionNumbers[shortID]
+}
+
+// notifChannelID returns the channel ID where
+// the notification message lives. Falls back to
+// the DM channel if not in channel mode.
+func (d *Daemon) notifChannelID(
+	meta *session.Metadata,
+) string {
+	if meta.NotificationChannelID != "" {
+		return meta.NotificationChannelID
+	}
+	return d.discord.DMChannelID()
+}
+
+// transitionToWorking edits the notification
+// embed to green "working" state and removes
+// bot reactions.
+func (d *Daemon) transitionToWorking(
+	meta *session.Metadata,
+) {
+	chID := d.notifChannelID(meta)
+	num := d.sessionNumber(meta.ShortID)
+	title := fmt.Sprintf(
+		"Session %d: Claude is working...",
+		num,
+	)
+	_ = d.discord.EditEmbed(
+		chID, meta.NotificationMsgID,
+		title, discord.ColorWorking,
+	)
+	_ = d.discord.RemoveBotReactions(
+		chID, meta.NotificationMsgID,
+	)
+
+	meta.NotificationSent = false
+	meta.RemoteMode = false
+	metaPath := filepath.Join(
+		d.stateDir,
+		fmt.Sprintf("%d.json", meta.PID),
+	)
+	if err := session.Write(
+		metaPath, meta,
+	); err != nil {
+		log.Printf(
+			"update metadata: %v", err)
+	}
+	log.Printf(
+		"session %d → working (green)",
+		meta.PID,
+	)
+}
+
+// transitionToWaiting edits the notification
+// embed back to yellow "waiting" state, re-adds
+// bot reactions, and resets response tracking.
+func (d *Daemon) transitionToWaiting(
+	meta *session.Metadata,
+) {
+	chID := d.notifChannelID(meta)
+	num := d.sessionNumber(meta.ShortID)
+	title := fmt.Sprintf(
+		"Session %d: Claude is waiting...",
+		num,
+	)
+	_ = d.discord.EditEmbed(
+		chID, meta.NotificationMsgID,
+		title, discord.ColorWaiting,
+	)
+	_ = d.discord.AddReactionsTo(
+		chID, meta.NotificationMsgID,
+	)
+
+	meta.NotificationSent = true
+	meta.ResponseDelivered = false
+	meta.ResponseDeliveredBy = ""
+	metaPath := filepath.Join(
+		d.stateDir,
+		fmt.Sprintf("%d.json", meta.PID),
+	)
+	if err := session.Write(
+		metaPath, meta,
+	); err != nil {
+		log.Printf(
+			"update metadata: %v", err)
+	}
+	log.Printf(
+		"session %d → waiting (yellow)",
+		meta.PID,
+	)
+}
+
+// handleDeadSession edits the embed to red
+// "disconnected", schedules deletion after 30s,
+// releases the session number, and removes the
+// metadata file.
+func (d *Daemon) handleDeadSession(
+	meta *session.Metadata,
+) {
+	if meta.NotificationMsgID != "" {
+		chID := d.notifChannelID(meta)
+		num := d.sessionNumber(meta.ShortID)
+		title := fmt.Sprintf(
+			"Session %d: Disconnected", num,
+		)
+		_ = d.discord.EditEmbed(
+			chID, meta.NotificationMsgID,
+			title, discord.ColorDisconnected,
+		)
+		_ = d.discord.RemoveBotReactions(
+			chID, meta.NotificationMsgID,
+		)
+
+		// Schedule cleanup after 30s.
+		msgID := meta.NotificationMsgID
+		go func() {
+			time.Sleep(30 * time.Second)
+			_ = d.discord.DeleteChannelMessage(
+				chID, msgID,
+			)
+		}()
+	}
+
+	// Remove from cache.
+	delete(
+		d.msgIDCache, meta.NotificationMsgID,
+	)
+
+	// Release session number.
+	if meta.ShortID != "" {
+		d.releaseNumber(meta.ShortID)
+	}
+
+	// Remove metadata file.
+	path := filepath.Join(
+		d.stateDir,
+		fmt.Sprintf("%d.json", meta.PID),
+	)
+	_ = os.Remove(path)
+
+	log.Printf(
+		"session %d → disconnected (red), "+
+			"cleanup in 30s", meta.PID,
+	)
 }
