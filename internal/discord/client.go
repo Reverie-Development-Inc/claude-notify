@@ -203,6 +203,7 @@ func (c *Client) handleRateLimit(err error) {
 // notification message.
 func buildNotificationEmbed(
 	projectName, shortID, preview, summary string,
+	sessionNum int,
 ) *discordgo.MessageEmbed {
 	body := preview
 	if summary != "" {
@@ -218,17 +219,19 @@ func buildNotificationEmbed(
 
 	return &discordgo.MessageEmbed{
 		Title: fmt.Sprintf(
-			"Claude waiting (%s)", projectName,
+			"Session %d: Claude is waiting...",
+			sessionNum,
 		),
 		Description: body + suffix,
-		Color:       0xD4A574,
+		Color:       ColorWaiting,
 		Footer: &discordgo.MessageEmbedFooter{
 			Text: fmt.Sprintf(
 				"Session: %s #%s",
 				projectName, shortID,
 			),
 		},
-		Timestamp: time.Now().Format(time.RFC3339),
+		Timestamp: time.Now().Format(
+			time.RFC3339),
 	}
 }
 
@@ -240,6 +243,7 @@ func (c *Client) SendNotification(
 	shortID string,
 	preview string,
 	summary string,
+	sessionNum int,
 ) (string, error) {
 	if err := c.ensureDMChannel(); err != nil {
 		return "", err
@@ -250,6 +254,7 @@ func (c *Client) SendNotification(
 
 	embed := buildNotificationEmbed(
 		projectName, shortID, preview, summary,
+		sessionNum,
 	)
 	msg, err := c.session.ChannelMessageSendEmbed(
 		c.dmChannel, embed,
@@ -279,6 +284,7 @@ func (c *Client) SendChannelNotification(
 	shortID string,
 	preview string,
 	summary string,
+	sessionNum int,
 ) (string, error) {
 	if err := c.checkRateLimit(); err != nil {
 		return "", err
@@ -286,6 +292,7 @@ func (c *Client) SendChannelNotification(
 
 	embed := buildNotificationEmbed(
 		projectName, shortID, preview, summary,
+		sessionNum,
 	)
 	msg, err := c.session.ChannelMessageSendEmbed(
 		channelID, embed,
@@ -493,12 +500,13 @@ func (c *Client) ClearNotificationMessages(
 // non-empty, the embed's footer must contain that session
 // ID.
 func isNotificationEmbed(
-	msg *discordgo.Message, sessionFilter string,
+	msg *discordgo.Message,
+	sessionFilter string,
 ) bool {
 	for _, embed := range msg.Embeds {
 		if embed.Title == "" ||
 			!strings.HasPrefix(
-				embed.Title, "Claude waiting") {
+				embed.Title, "Session ") {
 			continue
 		}
 		if sessionFilter == "" {
@@ -507,7 +515,6 @@ func isNotificationEmbed(
 		if embed.Footer == nil {
 			continue
 		}
-		// Exact match on session ID after "#".
 		parts := strings.SplitN(
 			embed.Footer.Text, "#", 2)
 		if len(parts) == 2 &&
@@ -526,6 +533,13 @@ const (
 	ReactionYes  = "✅"
 	ReactionNo   = "❌"
 	ReactionLook = "👀"
+)
+
+// Embed colors for session status.
+const (
+	ColorWorking      = 0x2ECC71 // green
+	ColorWaiting      = 0xF1C40F // yellow
+	ColorDisconnected = 0xE74C3C // red
 )
 
 // reactionMap maps reaction emojis to reply text.

@@ -227,6 +227,7 @@ func (d *Daemon) sendNotification(
 			meta.ShortID,
 			meta.LastMessagePreview,
 			meta.NotifySummary,
+			0,
 		)
 		if err == nil {
 			meta.NotificationChannelID =
@@ -239,6 +240,7 @@ func (d *Daemon) sendNotification(
 			meta.ShortID,
 			meta.LastMessagePreview,
 			meta.NotifySummary,
+			0,
 		)
 	}
 
@@ -406,10 +408,6 @@ func (d *Daemon) notifiedSessions() []*session.Metadata {
 	return notified
 }
 
-// ColorResolved is the grey color for handled
-// notification embeds.
-const ColorResolved = 0x95A5A6
-
 // deliverReply injects a reply into the session via
 // FIFO, acknowledges it in Discord, and enters remote
 // mode.
@@ -468,7 +466,7 @@ func (d *Daemon) deliverReplyFrom(
 		)
 		_ = d.discord.EditEmbed(
 			chID, meta.NotificationMsgID,
-			"Resolved", ColorResolved,
+			"Resolved", discord.ColorWorking,
 		)
 	}
 
@@ -569,7 +567,7 @@ func (d *Daemon) dismissNotification(
 		)
 		_ = d.discord.EditEmbed(
 			chID, meta.NotificationMsgID,
-			"Resolved", ColorResolved,
+			"Resolved", discord.ColorWorking,
 		)
 	}
 	meta.NotificationSent = false

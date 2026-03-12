@@ -2,6 +2,8 @@ package discord
 
 import (
 	"testing"
+
+	"github.com/bwmarrin/discordgo"
 )
 
 func TestExpandReaction(t *testing.T) {
@@ -54,10 +56,16 @@ func TestEventChannelTypes(t *testing.T) {
 func TestBuildNotificationEmbed(t *testing.T) {
 	embed := buildNotificationEmbed(
 		"myproject", "abc1", "hello world", "",
+		1,
 	)
-	if embed.Title != "Claude waiting (myproject)" {
-		t.Errorf("unexpected title: %s",
-			embed.Title)
+	want := "Session 1: Claude is waiting..."
+	if embed.Title != want {
+		t.Errorf("title = %q, want %q",
+			embed.Title, want)
+	}
+	if embed.Color != ColorWaiting {
+		t.Errorf("color = %d, want %d",
+			embed.Color, ColorWaiting)
 	}
 	if embed.Footer == nil ||
 		embed.Footer.Text !=
@@ -66,15 +74,88 @@ func TestBuildNotificationEmbed(t *testing.T) {
 	}
 }
 
-func TestBuildNotificationEmbed_Summary(t *testing.T) {
+func TestBuildNotificationEmbed_Summary(
+	t *testing.T,
+) {
 	embed := buildNotificationEmbed(
-		"proj", "x", "raw preview", "summary here",
+		"proj", "x", "raw preview",
+		"summary here", 3,
 	)
-	if !contains(embed.Description, "summary here") {
+	if !contains(
+		embed.Description, "summary here",
+	) {
 		t.Error("summary not in description")
 	}
-	if contains(embed.Description, "raw preview") {
-		t.Error("raw preview should be replaced")
+	if contains(
+		embed.Description, "raw preview",
+	) {
+		t.Error(
+			"raw preview should be replaced")
+	}
+}
+
+func TestIsNotificationEmbed(t *testing.T) {
+	tests := []struct {
+		name   string
+		title  string
+		footer string
+		filter string
+		want   bool
+	}{
+		{
+			"waiting embed matches",
+			"Session 1: Claude is waiting...",
+			"Session: proj #abc1", "", true,
+		},
+		{
+			"working embed matches",
+			"Session 2: Claude is working...",
+			"Session: proj #def2", "", true,
+		},
+		{
+			"disconnected embed matches",
+			"Session 3: Disconnected",
+			"Session: proj #ghi3", "", true,
+		},
+		{
+			"filter matches",
+			"Session 1: Claude is waiting...",
+			"Session: proj #abc1", "abc1",
+			true,
+		},
+		{
+			"filter mismatch",
+			"Session 1: Claude is waiting...",
+			"Session: proj #abc1", "xyz9",
+			false,
+		},
+		{
+			"non-notification embed",
+			"Some other title",
+			"whatever", "", false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := &discordgo.Message{
+				Embeds: []*discordgo.MessageEmbed{
+					{
+						Title: tt.title,
+						Footer: &discordgo.
+							MessageEmbedFooter{
+							Text: tt.footer,
+						},
+					},
+				},
+			}
+			got := isNotificationEmbed(
+				msg, tt.filter,
+			)
+			if got != tt.want {
+				t.Errorf("got %v, want %v",
+					got, tt.want)
+			}
+		})
 	}
 }
 
