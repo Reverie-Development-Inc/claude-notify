@@ -413,6 +413,23 @@ func (d *Daemon) handleReaction(
 		return
 	}
 
+	// 👀 shows full output without injecting into
+	// the session. Does not count as a response.
+	if ev.Emoji == discord.ReactionLook {
+		chID := d.notifChannelID(meta)
+		preview := meta.LastMessagePreview
+		if preview == "" {
+			preview = "(no output captured)"
+		}
+		msg := "```\n" + preview + "\n```"
+		_ = d.discord.SendHintTo(chID, msg)
+		log.Printf(
+			"👀 preview sent for session %d",
+			meta.PID,
+		)
+		return
+	}
+
 	text := discord.ExpandReaction(ev.Emoji)
 	if text == "" {
 		return

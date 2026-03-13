@@ -542,12 +542,13 @@ const (
 	ColorDisconnected = 0xE74C3C // red
 )
 
-// reactionMap maps reaction emojis to reply text.
+// reactionMap maps reaction emojis to reply text
+// injected into the session. ReactionLook is handled
+// separately (shows full output, no injection).
 var reactionMap = map[string]string{
 	ReactionYes: "Yes or Continue, decide which " +
 		"answer makes more sense based on context.",
 	ReactionNo: "No",
-	ReactionLook: "Show me additional context on this",
 }
 
 // ExpandReaction returns the reply text for a reaction

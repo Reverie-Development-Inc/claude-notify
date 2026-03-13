@@ -281,7 +281,13 @@ Notification messages include three reaction emojis:
 |----------|---------|
 | ✅ | Yes, continue |
 | ❌ | No, stop here |
-| 👀 | Show me what you have so far |
+| 👀 | Tell me more about this |
+
+✅ and ❌ inject a response into the session. 👀 is
+different — it sends Claude's full output as a code block
+in Discord so you can read the details before deciding.
+It does not count as a response, so you can still react
+or reply afterward.
 
 React to respond quickly, or use Discord's **Reply** feature
 to type a custom response.

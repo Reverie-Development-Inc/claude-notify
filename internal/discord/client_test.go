@@ -14,7 +14,7 @@ func TestExpandReaction(t *testing.T) {
 		{ReactionYes, "Yes or Continue, decide which " +
 			"answer makes more sense based on context."},
 		{ReactionNo, "No"},
-		{ReactionLook, "Show me additional context on this"},
+		{ReactionLook, ""}, // handled separately by daemon
 		{"🎉", ""},
 	}
 	for _, tt := range tests {
