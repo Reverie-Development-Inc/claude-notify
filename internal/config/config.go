@@ -148,7 +148,7 @@ func Load(path string) (*Config, error) {
 		},
 	}
 
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- XDG config path
 	if err == nil {
 		if err := yaml.Unmarshal(data, cfg); err != nil {
 			return nil, err

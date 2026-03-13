@@ -113,7 +113,7 @@ func runSessionUpdate(
 func extractLastAssistantMessage(
 	transcriptPath string,
 ) string {
-	data, err := os.ReadFile(transcriptPath)
+	data, err := os.ReadFile(transcriptPath) // #nosec G304 -- Claude transcript path
 	if err != nil {
 		return ""
 	}

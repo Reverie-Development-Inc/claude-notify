@@ -79,7 +79,7 @@ func Run(cfg Config, args []string) error {
 
 	// Build command with env vars so hooks can locate the
 	// session metadata and FIFO.
-	cmd := exec.Command(cfg.ClaudeBinary, args...)
+	cmd := exec.Command(cfg.ClaudeBinary, args...) // #nosec G204 -- binary path from user config
 	cmd.Env = append(
 		os.Environ(),
 		"CLAUDE_NOTIFY_SESSION="+metaPath,
@@ -144,7 +144,7 @@ func Run(cfg Config, args []string) error {
 	// closes, blocking until the next writer connects.
 	go func() {
 		for {
-			f, err := os.Open(fifoPath)
+			f, err := os.Open(fifoPath) // #nosec G304 -- path constructed by this process
 			if err != nil {
 				return // FIFO removed means exit
 			}

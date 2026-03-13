@@ -41,7 +41,7 @@ func LoadDiscordRuntimeConfig(
 	drc := &DiscordRuntimeConfig{}
 
 	path := filepath.Join(stateDir, discordConfigFile)
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path from state dir
 	if err != nil {
 		drcInstance = drc
 		return drc

@@ -16,7 +16,7 @@ import (
 // Uses O_NONBLOCK to avoid blocking the daemon if no
 // reader is present.
 func writeToFIFO(fifoPath, content string) error {
-	f, err := os.OpenFile(
+	f, err := os.OpenFile( // #nosec G304 -- FIFO path from session metadata
 		fifoPath,
 		os.O_WRONLY|syscall.O_NONBLOCK,
 		0600,

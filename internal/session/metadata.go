@@ -94,7 +94,7 @@ func Write(path string, m *Metadata) error {
 
 // Read deserializes a metadata JSON file from disk.
 func Read(path string) (*Metadata, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path from state dir
 	if err != nil {
 		return nil, err
 	}

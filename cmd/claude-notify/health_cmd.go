@@ -104,7 +104,8 @@ func runHealth(cmd *cobra.Command, args []string) error {
 	settingsPath := filepath.Join(
 		home, ".claude", "settings.json",
 	)
-	if data, err := os.ReadFile(settingsPath); err == nil {
+	data, err := os.ReadFile(settingsPath) // #nosec G304 -- well-known settings path
+	if err == nil {
 		settings := string(data)
 		if strings.Contains(
 			settings, "claude-notify",
