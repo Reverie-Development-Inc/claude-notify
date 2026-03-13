@@ -44,14 +44,67 @@ Discord (gateway + REST)
 ## Prerequisites
 
 - **Go 1.24+**
-- **Discord bot** with DM permissions (Send Messages,
-  Read Message History) and `applications.commands` scope
-  for the `/clear` slash command. No server/guild
-  permissions needed.
-- **Bot token** provided via one of:
-  - `CLAUDE_NOTIFY_BOT_TOKEN` environment variable, OR
-  - AWS SSM Parameter Store (requires AWS account + credentials)
+- **Discord bot application** (see setup below)
 - **Linux** (systemd), **macOS** (launchd), or **Windows**
+
+## Discord Bot Setup
+
+claude-notify requires a **Discord bot** — not just an API key.
+The bot uses a persistent websocket (gateway) to listen for
+your reactions and replies in real-time. This is how the
+two-way chat works: you react with ✅ or type a reply, and
+the bot picks it up instantly.
+
+### 1. Create a Discord application
+
+Go to the [Discord Developer Portal](https://discord.com/developers/applications)
+and click **New Application**. Name it whatever you like
+(e.g., "Claude Notify").
+
+### 2. Create a bot
+
+In your application, go to the **Bot** tab and click
+**Add Bot**.
+
+- **Copy the bot token** — you'll need it during setup.
+  This is the only time Discord shows it. If you lose it,
+  you'll need to regenerate.
+- **Disable "Public Bot"** — only you need to add it.
+
+### 3. Enable required intents
+
+On the **Bot** tab, scroll to **Privileged Gateway Intents**
+and enable:
+
+- **Message Content Intent** — required to read your
+  reply text from DMs
+
+### 4. Set bot permissions
+
+On the **OAuth2** tab, under **URL Generator**:
+
+- **Scopes**: `bot`, `applications.commands`
+- **Bot Permissions**: `Send Messages`,
+  `Read Message History`, `Add Reactions`,
+  `Manage Messages` (for editing/deleting its own embeds)
+
+### 5. Invite the bot (optional for DM mode)
+
+**DM-only mode** (default): No invite needed. The bot sends
+DMs directly to your Discord user ID. Just make sure you
+share at least one server with the bot, or have DMs from
+server members enabled.
+
+**Channel mode**: If you want notifications in a server
+channel instead of DMs, use the generated OAuth2 URL to
+invite the bot to your server. Then use `/configure` to
+set the notification channel.
+
+### 6. Get your Discord user ID
+
+In Discord: **Settings → App Settings → Advanced → enable
+Developer Mode**. Then right-click your name anywhere and
+click **Copy User ID**.
 
 ## Quick Start
 
@@ -71,19 +124,20 @@ This builds the binary and copies it to `~/.local/bin/`.
 claude-notify setup
 ```
 
-Prompts for your Discord user ID, token source (SSM path or
-env var), AWS region (if using SSM), and notification delay.
-Writes config to `~/.config/claude-notify/config.yaml`.
+Prompts for your Discord user ID, bot token source, and
+notification delay. Writes config to
+`~/.config/claude-notify/config.yaml`.
 
 ### 3. Set your bot token
 
-**Option A: Environment variable (no AWS required)**
+**Option A: Environment variable (recommended)**
 
 ```sh
 export CLAUDE_NOTIFY_BOT_TOKEN="your-bot-token-here"
 ```
 
-Add to your shell profile to persist across sessions.
+Add to your shell profile (`~/.zshrc` or `~/.bashrc`) to
+persist across sessions.
 
 **Option B: AWS SSM Parameter Store**
 
