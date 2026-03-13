@@ -606,11 +606,13 @@ func (c *Client) RemoveBotReactions(
 	return nil
 }
 
-// EditEmbed updates the title and color of a message's
-// first embed. Channel-aware replacement for the old
-// EditEmbedColor method.
+// EditEmbed updates the title, color, and
+// optionally the description of a message's first
+// embed. If desc is empty, the existing description
+// is preserved.
 func (c *Client) EditEmbed(
-	channelID, msgID, title string, color int,
+	channelID, msgID, title string,
+	color int, desc string,
 ) error {
 	if err := c.checkRateLimit(); err != nil {
 		return err
@@ -629,6 +631,9 @@ func (c *Client) EditEmbed(
 	embed := msg.Embeds[0]
 	embed.Title = title
 	embed.Color = color
+	if desc != "" {
+		embed.Description = desc
+	}
 	_, err = c.session.ChannelMessageEditEmbed(
 		channelID, msgID, embed,
 	)

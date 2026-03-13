@@ -534,7 +534,7 @@ func (d *Daemon) deliverReplyFrom(
 		)
 		_ = d.discord.EditEmbed(
 			chID, meta.NotificationMsgID,
-			title, discord.ColorWorking,
+			title, discord.ColorWorking, "",
 		)
 	}
 
@@ -829,7 +829,7 @@ func (d *Daemon) transitionToWorking(
 	)
 	_ = d.discord.EditEmbed(
 		chID, meta.NotificationMsgID,
-		title, discord.ColorWorking,
+		title, discord.ColorWorking, "",
 	)
 	_ = d.discord.RemoveBotReactions(
 		chID, meta.NotificationMsgID,
@@ -865,9 +865,26 @@ func (d *Daemon) transitionToWaiting(
 		"Session %d: Claude is waiting...",
 		num,
 	)
+
+	// Build updated body from current preview
+	// or summary.
+	body := meta.LastMessagePreview
+	if meta.NotifySummary != "" {
+		body = meta.NotifySummary
+	}
+	suffix := "\n\n" +
+		"React below, or **reply** to " +
+		"this message to type something " +
+		"custom."
+	maxBody := 4096 - len(suffix)
+	if len(body) > maxBody {
+		body = body[:maxBody]
+	}
+	desc := body + suffix
+
 	_ = d.discord.EditEmbed(
 		chID, meta.NotificationMsgID,
-		title, discord.ColorWaiting,
+		title, discord.ColorWaiting, desc,
 	)
 	_ = d.discord.AddReactionsTo(
 		chID, meta.NotificationMsgID,
@@ -907,7 +924,7 @@ func (d *Daemon) handleDeadSession(
 		)
 		_ = d.discord.EditEmbed(
 			chID, meta.NotificationMsgID,
-			title, discord.ColorDisconnected,
+			title, discord.ColorDisconnected, "",
 		)
 		_ = d.discord.RemoveBotReactions(
 			chID, meta.NotificationMsgID,

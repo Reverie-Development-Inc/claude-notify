@@ -90,8 +90,10 @@ func TestMetadataLifecycle(t *testing.T) {
 		t.Errorf("want active after prompt, got %s",
 			got3.Status)
 	}
-	if got3.NotificationSent {
-		t.Error("notification should be reset on active")
+	// NotificationSent stays true — daemon owns the
+	// embed lifecycle and will transition to green
+	if !got3.NotificationSent {
+		t.Error("notification should persist on active")
 	}
 
 	// Verify PID is preserved through all updates
