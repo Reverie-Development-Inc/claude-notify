@@ -23,9 +23,8 @@ type DiscordRuntimeConfig struct {
 const discordConfigFile = "discord-config.json"
 
 var (
-	drcMu       sync.Mutex
-	drcInstance  *DiscordRuntimeConfig
-	drcStateDir string
+	drcMu      sync.Mutex
+	drcInstance *DiscordRuntimeConfig
 )
 
 // LoadDiscordRuntimeConfig reads discord-config.json
@@ -37,7 +36,6 @@ func LoadDiscordRuntimeConfig(
 	drcMu.Lock()
 	defer drcMu.Unlock()
 
-	drcStateDir = stateDir
 	drc := &DiscordRuntimeConfig{}
 
 	path := filepath.Join(stateDir, discordConfigFile)
@@ -65,7 +63,6 @@ func SaveDiscordRuntimeConfig(
 	}
 	path := filepath.Join(stateDir, discordConfigFile)
 	drcInstance = drc
-	drcStateDir = stateDir
 	return os.WriteFile(path, data, 0600)
 }
 
