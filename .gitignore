@@ -11,9 +11,10 @@
 # Secrets
 .env*
 
-# Claude Code
+# Claude Code / internal dev
 CLAUDE.md
 .beads/
+docs/plans/
 
 # OS
 .DS_Store
