@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.1.0 (2026-03-13)
+
+### Features
+
+- **Live status embeds**: color-coded embed lifecycle —
+  yellow (waiting) → green (working) → red (disconnected)
+  → auto-delete after 30s
+- **Sticky session numbers**: embeds show "Session N:" with
+  lowest-available recycling when sessions end
+- **First-wins cross-type**: reactions and replies compete
+  fairly — first response wins, duplicates get attribution
+  hints ("already delivered by @user")
+- **Channel-mode notifications**: send to a guild channel
+  instead of DMs via `/configure`
+
+### Improvements
+
+- Bot removes only its own reactions (preserves user
+  reactions as a record)
+- Re-wait cycle updates embed body text with current summary
+- gosec `#nosec` annotations for expected CLI patterns
+
 ## v1.0.0 (2026-03-08)
 
 Initial public release.

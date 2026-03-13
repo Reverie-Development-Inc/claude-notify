@@ -232,12 +232,27 @@ Notification messages include three reaction emojis:
 React to respond quickly, or use Discord's **Reply** feature
 to type a custom response.
 
-### Reply Acknowledgement
+### Live Status Embeds
 
-- **Typed replies**: Bot reacts with ✅ on your message
-- **Reactions**: Bot clears the reaction bar on the
-  notification
-- **Both**: Notification embed turns grey to show it's handled
+Notification embeds update in real-time with color-coded status:
+
+| State | Color | Title |
+|-------|-------|-------|
+| Waiting | Yellow | Session N: Claude is waiting... |
+| Working | Green | Session N: Claude is working... |
+| Disconnected | Red | Session N: Disconnected |
+
+- **Typed replies**: Bot reacts with ✅ on your message,
+  embed turns green
+- **Reactions**: Bot removes its reaction buttons, embed
+  turns green. Your reactions are preserved as a record.
+- **Re-wait**: If Claude finishes and waits again, the same
+  embed flips back to yellow with updated text
+- **Disconnect**: Session dies → embed turns red → auto-deleted
+  after 30 seconds
+- **First-wins**: If a reaction and reply race, the first one
+  wins. Duplicate replies get a hint: "A response was already
+  delivered by @user."
 
 If the session is no longer active, the bot reacts with ❌
 and sends "Session is no longer active."
