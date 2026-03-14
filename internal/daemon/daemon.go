@@ -948,6 +948,12 @@ func (d *Daemon) transitionToWorking(
 func (d *Daemon) transitionToWaiting(
 	meta *session.Metadata,
 ) {
+	if d.notificationMode() == ModeForum &&
+		meta.ForumThreadID != "" {
+		d.forumTransitionToWaiting(meta)
+		return
+	}
+
 	chID := d.notifChannelID(meta)
 	num := d.sessionNumber(meta.ShortID)
 	title := fmt.Sprintf(
@@ -994,6 +1000,45 @@ func (d *Daemon) transitionToWaiting(
 	}
 	log.Printf(
 		"session %d → waiting (yellow)",
+		meta.PID,
+	)
+}
+
+// forumTransitionToWaiting posts a new yellow embed
+// in the forum thread for a re-waiting session.
+func (d *Daemon) forumTransitionToWaiting(
+	meta *session.Metadata,
+) {
+	projectName := filepath.Base(meta.CWD)
+	embed := discord.BuildForumWaitingEmbed(
+		projectName, meta.ShortID,
+		meta.LastMessagePreview,
+		meta.NotifySummary,
+	)
+	msgID, err := d.discord.PostForumMessage(
+		meta.ForumThreadID, embed,
+	)
+	if err != nil {
+		log.Printf(
+			"forum re-wait for %d: %v",
+			meta.PID, err,
+		)
+		return
+	}
+
+	meta.ForumLastMsgID = msgID
+	meta.NotificationSent = true
+	meta.ResponseDelivered = false
+	meta.ResponseDeliveredBy = ""
+	metaPath := filepath.Join(
+		d.stateDir,
+		fmt.Sprintf("%d.json", meta.PID),
+	)
+	if err := session.Write(metaPath, meta); err != nil {
+		log.Printf("update metadata: %v", err)
+	}
+	log.Printf(
+		"session %d → waiting (forum, yellow)",
 		meta.PID,
 	)
 }
