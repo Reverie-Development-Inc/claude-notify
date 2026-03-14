@@ -18,6 +18,10 @@ type DiscordRuntimeConfig struct {
 	// NotificationChannel is a Discord channel ID. If
 	// set, notifications post here instead of DM.
 	NotificationChannel string `json:"notification_channel"`
+	// ForumChannelID is a Discord forum channel ID. If
+	// set, notifications create/update forum threads
+	// instead of DM or channel messages.
+	ForumChannelID string `json:"forum_channel_id,omitempty"`
 }
 
 const discordConfigFile = "discord-config.json"
@@ -75,6 +79,24 @@ func GetDiscordRuntimeConfig() *DiscordRuntimeConfig {
 		return &DiscordRuntimeConfig{}
 	}
 	return drcInstance
+}
+
+// SetForum sets the forum channel ID and clears the
+// notification channel (mutual exclusion).
+func (drc *DiscordRuntimeConfig) SetForum(
+	channelID string,
+) {
+	drc.ForumChannelID = channelID
+	drc.NotificationChannel = ""
+}
+
+// SetChannel sets the notification channel and clears
+// the forum channel ID (mutual exclusion).
+func (drc *DiscordRuntimeConfig) SetChannel(
+	channelID string,
+) {
+	drc.NotificationChannel = channelID
+	drc.ForumChannelID = ""
 }
 
 // IsUserAllowed checks if a Discord user ID is the

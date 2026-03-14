@@ -93,3 +93,46 @@ func TestDiscordRuntimeConfig_MissingFile(
 		t.Error("empty config should have no channel")
 	}
 }
+
+func TestForumChannelID_Persistence(t *testing.T) {
+	dir := t.TempDir()
+	drc := &DiscordRuntimeConfig{
+		ForumChannelID: "forum123",
+	}
+	if err := SaveDiscordRuntimeConfig(
+		dir, drc,
+	); err != nil {
+		t.Fatal(err)
+	}
+	loaded := LoadDiscordRuntimeConfig(dir)
+	if loaded.ForumChannelID != "forum123" {
+		t.Errorf("ForumChannelID = %q, want %q",
+			loaded.ForumChannelID, "forum123")
+	}
+}
+
+func TestForumClearsChannel(t *testing.T) {
+	drc := &DiscordRuntimeConfig{
+		NotificationChannel: "ch1",
+	}
+	drc.SetForum("forum1")
+	if drc.NotificationChannel != "" {
+		t.Error("setting forum should clear channel")
+	}
+	if drc.ForumChannelID != "forum1" {
+		t.Error("forum not set")
+	}
+}
+
+func TestChannelClearsForum(t *testing.T) {
+	drc := &DiscordRuntimeConfig{
+		ForumChannelID: "forum1",
+	}
+	drc.SetChannel("ch1")
+	if drc.ForumChannelID != "" {
+		t.Error("setting channel should clear forum")
+	}
+	if drc.NotificationChannel != "ch1" {
+		t.Error("channel not set")
+	}
+}
