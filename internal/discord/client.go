@@ -46,7 +46,7 @@ type ClearCommand struct {
 // ConfigureCommand is sent when a user invokes the
 // /configure slash command.
 type ConfigureCommand struct {
-	// Subcommand: "user" or "channel"
+	// Subcommand: "user", "channel", or "forum"
 	Subcommand string
 	// Action: "add", "remove", "list", "set",
 	// "clear", "show"
@@ -883,7 +883,8 @@ func (c *Client) handleConfigureInteraction(
 ) {
 	if len(data.Options) == 0 {
 		_ = c.RespondToInteraction(
-			i.Interaction, "Usage: /configure user|channel")
+			i.Interaction,
+			"Usage: /configure user|channel|forum")
 		return
 	}
 
@@ -1015,6 +1016,41 @@ func (c *Client) RegisterCommands() error {
 								ApplicationCommandOptionSubCommand,
 							Name:        "show",
 							Description: "Show current channel",
+						},
+					},
+				},
+				{
+					Type: discordgo.
+						ApplicationCommandOptionSubCommandGroup,
+					Name:        "forum",
+					Description: "Manage forum notification channel",
+					Options: []*discordgo.ApplicationCommandOption{
+						{
+							Type: discordgo.
+								ApplicationCommandOptionSubCommand,
+							Name:        "set",
+							Description: "Set forum channel",
+							Options: []*discordgo.ApplicationCommandOption{
+								{
+									Type: discordgo.
+										ApplicationCommandOptionString,
+									Name:        "id",
+									Description: "Forum channel ID",
+									Required:    true,
+								},
+							},
+						},
+						{
+							Type: discordgo.
+								ApplicationCommandOptionSubCommand,
+							Name:        "clear",
+							Description: "Remove forum channel",
+						},
+						{
+							Type: discordgo.
+								ApplicationCommandOptionSubCommand,
+							Name:        "show",
+							Description: "Show current forum channel",
 						},
 					},
 				},

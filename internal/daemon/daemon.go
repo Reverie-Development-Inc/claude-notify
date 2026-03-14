@@ -769,6 +769,9 @@ func (d *Daemon) handleConfigure(
 	case "channel":
 		response = d.handleConfigureChannel(
 			drc, cmd.Action, cmd.Value)
+	case "forum":
+		response = d.handleConfigureForum(
+			drc, cmd.Action, cmd.Value)
 	default:
 		response = "Unknown subcommand: " +
 			cmd.Subcommand
@@ -839,7 +842,7 @@ func (d *Daemon) handleConfigureChannel(
 		if value == "" {
 			return "Channel ID required."
 		}
-		drc.NotificationChannel = value
+		drc.SetChannel(value)
 		if err := config.SaveDiscordRuntimeConfig(
 			d.stateDir, drc,
 		); err != nil {
@@ -863,6 +866,44 @@ func (d *Daemon) handleConfigureChannel(
 		}
 		return "Current channel: " +
 			drc.NotificationChannel
+	default:
+		return "Unknown action: " + action
+	}
+}
+
+func (d *Daemon) handleConfigureForum(
+	drc *config.DiscordRuntimeConfig,
+	action, value string,
+) string {
+	switch action {
+	case "set":
+		if value == "" {
+			return "Forum channel ID required."
+		}
+		drc.SetForum(value)
+		if err := config.SaveDiscordRuntimeConfig(
+			d.stateDir, drc,
+		); err != nil {
+			return "Error saving config: " +
+				err.Error()
+		}
+		return "Notifications will create " +
+			"threads in forum " + value + "."
+	case "clear":
+		drc.ForumChannelID = ""
+		if err := config.SaveDiscordRuntimeConfig(
+			d.stateDir, drc,
+		); err != nil {
+			return "Error saving config: " +
+				err.Error()
+		}
+		return "Forum channel cleared (using DM)."
+	case "show":
+		if drc.ForumChannelID == "" {
+			return "No forum channel set."
+		}
+		return "Current forum channel: " +
+			drc.ForumChannelID
 	default:
 		return "Unknown action: " + action
 	}
