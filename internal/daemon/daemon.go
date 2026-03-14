@@ -275,44 +275,62 @@ func shouldNotify(
 }
 
 // sendNotification sends a Discord notification for the
-// given session. Posts to configured channel if set,
-// otherwise sends a DM. Uses session number allocator.
+// given session. Routes to forum, channel, or DM based
+// on the current notification mode.
 func (d *Daemon) sendNotification(
 	meta *session.Metadata,
 ) {
 	projectName := filepath.Base(meta.CWD)
-	sessionNum := d.allocateNumber(
-		meta.ShortID,
-	)
+	sessionNum := d.allocateNumber(meta.ShortID)
 	drc := config.GetDiscordRuntimeConfig()
+	mode := resolveMode(
+		drc.NotificationChannel,
+		drc.ForumChannelID,
+	)
 
 	var msgID string
 	var err error
 
-	if drc.NotificationChannel != "" {
+	switch mode {
+	case ModeForum:
+		title := discord.ForumThreadTitle(
+			meta.ShortID, projectName, false,
+		)
+		embed := discord.BuildForumWaitingEmbed(
+			projectName, meta.ShortID,
+			meta.LastMessagePreview,
+			meta.NotifySummary,
+		)
+		var threadID string
+		threadID, msgID, err =
+			d.discord.SendForumNotification(
+				drc.ForumChannelID, title, embed,
+			)
+		if err == nil {
+			meta.ForumThreadID = threadID
+			meta.ForumLastMsgID = msgID
+		}
+
+	case ModeChannel:
 		msgID, err =
 			d.discord.SendChannelNotification(
 				drc.NotificationChannel,
-				projectName,
-				meta.ShortID,
+				projectName, meta.ShortID,
 				meta.LastMessagePreview,
-				meta.NotifySummary,
-				sessionNum,
+				meta.NotifySummary, sessionNum,
 			)
 		if err == nil {
 			meta.NotificationChannelID =
 				drc.NotificationChannel
-			meta.NotificationChannelMsgID =
-				msgID
+			meta.NotificationChannelMsgID = msgID
 		}
-	} else {
+
+	default: // ModeDM
 		msgID, err =
 			d.discord.SendNotification(
-				projectName,
-				meta.ShortID,
+				projectName, meta.ShortID,
 				meta.LastMessagePreview,
-				meta.NotifySummary,
-				sessionNum,
+				meta.NotifySummary, sessionNum,
 			)
 	}
 
@@ -332,11 +350,8 @@ func (d *Daemon) sendNotification(
 		d.stateDir,
 		fmt.Sprintf("%d.json", meta.PID),
 	)
-	if err := session.Write(
-		metaPath, meta,
-	); err != nil {
-		log.Printf(
-			"update metadata: %v", err)
+	if err := session.Write(metaPath, meta); err != nil {
+		log.Printf("update metadata: %v", err)
 	}
 	log.Printf(
 		"sent notification for session %d "+
