@@ -639,8 +639,11 @@ func (d *Daemon) deliverReplyFrom(
 		)
 	}
 
-	// Edit embed to working state.
-	if meta.NotificationMsgID != "" {
+	// Edit embed to working state (DM/channel only).
+	// Forum mode handles this via forumTransitionToWorking
+	// in the tick loop.
+	if meta.NotificationMsgID != "" &&
+		meta.ForumThreadID == "" {
 		chID := d.notifChannelID(meta)
 		num := d.sessionNumber(meta.ShortID)
 		title := fmt.Sprintf(
@@ -1183,8 +1186,9 @@ func (d *Daemon) handleDeadSession(
 		}()
 	}
 
-	// Remove from cache.
+	// Remove from caches.
 	delete(d.msgIDCache, meta.NotificationMsgID)
+	delete(d.threadIDCache, meta.ForumThreadID)
 
 	// Release session number.
 	if meta.ShortID != "" {
@@ -1198,10 +1202,17 @@ func (d *Daemon) handleDeadSession(
 	)
 	_ = os.Remove(path)
 
-	log.Printf(
-		"session %d → disconnected (red), "+
-			"cleanup in 30s", meta.PID,
-	)
+	if meta.ForumThreadID != "" {
+		log.Printf(
+			"session %d → closed (forum, "+
+				"archived)", meta.PID,
+		)
+	} else {
+		log.Printf(
+			"session %d → disconnected (red), "+
+				"cleanup in 30s", meta.PID,
+		)
+	}
 }
 
 // forumHandleDeadSession posts a red embed, renames
@@ -1221,10 +1232,5 @@ func (d *Daemon) forumHandleDeadSession(
 
 	_ = d.discord.EditForumThreadTitle(
 		meta.ForumThreadID, closedTitle, true,
-	)
-
-	log.Printf(
-		"session %d → closed (forum, archived)",
-		meta.PID,
 	)
 }
