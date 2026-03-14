@@ -372,6 +372,35 @@ func (d *Daemon) handleReply(
 		return
 	}
 
+	// Forum mode: match ChannelID to a forum thread.
+	if meta := d.findSessionByThreadID(
+		ev.ChannelID,
+	); meta != nil {
+		if meta.ResponseDelivered {
+			hint := "A response was " +
+				"already delivered " +
+				"to this session."
+			if meta.ResponseDeliveredBy != "" {
+				hint = fmt.Sprintf(
+					"A response was already "+
+						"delivered by <@%s>.",
+					meta.ResponseDeliveredBy,
+				)
+			}
+			_ = d.discord.SendHintTo(
+				ev.ChannelID, hint,
+			)
+			return
+		}
+		d.deliverReplyFrom(
+			meta, ev.Content,
+			ev.MessageID, ev.ChannelID,
+			ev.UserID,
+		)
+		return
+	}
+
+	// Existing: route by RefMessageID.
 	if ev.RefMessageID != "" {
 		meta := d.findSessionByMsgID(
 			ev.RefMessageID,
