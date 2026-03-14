@@ -1083,11 +1083,14 @@ func (d *Daemon) forumTransitionToWaiting(
 // handleDeadSession edits the embed to red
 // "disconnected", schedules deletion after 30s,
 // releases the session number, and removes the
-// metadata file.
+// metadata file. Forum threads are archived
+// instead of deleted.
 func (d *Daemon) handleDeadSession(
 	meta *session.Metadata,
 ) {
-	if meta.NotificationMsgID != "" {
+	if meta.ForumThreadID != "" {
+		d.forumHandleDeadSession(meta)
+	} else if meta.NotificationMsgID != "" {
 		chID := d.notifChannelID(meta)
 		num := d.sessionNumber(meta.ShortID)
 		title := fmt.Sprintf(
@@ -1101,7 +1104,6 @@ func (d *Daemon) handleDeadSession(
 			chID, meta.NotificationMsgID,
 		)
 
-		// Schedule cleanup after 30s.
 		msgID := meta.NotificationMsgID
 		go func() {
 			time.Sleep(30 * time.Second)
@@ -1112,9 +1114,7 @@ func (d *Daemon) handleDeadSession(
 	}
 
 	// Remove from cache.
-	delete(
-		d.msgIDCache, meta.NotificationMsgID,
-	)
+	delete(d.msgIDCache, meta.NotificationMsgID)
 
 	// Release session number.
 	if meta.ShortID != "" {
@@ -1131,5 +1131,30 @@ func (d *Daemon) handleDeadSession(
 	log.Printf(
 		"session %d → disconnected (red), "+
 			"cleanup in 30s", meta.PID,
+	)
+}
+
+// forumHandleDeadSession posts a red embed, renames
+// the thread with [CLOSED], and archives it.
+func (d *Daemon) forumHandleDeadSession(
+	meta *session.Metadata,
+) {
+	projectName := filepath.Base(meta.CWD)
+	closedTitle := discord.ForumThreadTitle(
+		meta.ShortID, projectName, true,
+	)
+
+	embed := discord.BuildForumDeadEmbed()
+	_, _ = d.discord.PostForumMessage(
+		meta.ForumThreadID, embed,
+	)
+
+	_ = d.discord.EditForumThreadTitle(
+		meta.ForumThreadID, closedTitle, true,
+	)
+
+	log.Printf(
+		"session %d → closed (forum, archived)",
+		meta.PID,
 	)
 }
