@@ -67,6 +67,10 @@ type Daemon struct {
 	// on reaction/reply events.
 	msgIDCache map[string]*session.Metadata
 
+	// threadIDCache maps ForumThreadID → Metadata.
+	// Rebuilt every tick() alongside msgIDCache.
+	threadIDCache map[string]*session.Metadata
+
 	// Session number allocation.
 	sessionNumbers map[string]int // shortID→num
 	freeNumbers    []int          // sorted, low-first
@@ -161,8 +165,11 @@ func (d *Daemon) tick() {
 		return
 	}
 
-	// Rebuild message ID cache.
+	// Rebuild message ID and thread ID caches.
 	cache := make(
+		map[string]*session.Metadata,
+	)
+	threadCache := make(
 		map[string]*session.Metadata,
 	)
 	for _, meta := range sessions {
@@ -170,8 +177,13 @@ func (d *Daemon) tick() {
 			cache[meta.NotificationMsgID] =
 				meta
 		}
+		if meta.ForumThreadID != "" {
+			threadCache[meta.ForumThreadID] =
+				meta
+		}
 	}
 	d.msgIDCache = cache
+	d.threadIDCache = threadCache
 
 	delay := time.Duration(
 		d.cfg.Notify.DelayMinutes,
@@ -510,6 +522,17 @@ func (d *Daemon) findSessionByMsgID(
 		if meta.NotificationMsgID == msgID {
 			return meta
 		}
+	}
+	return nil
+}
+
+// findSessionByThreadID returns the session whose
+// ForumThreadID matches the given thread channel ID.
+func (d *Daemon) findSessionByThreadID(
+	threadID string,
+) *session.Metadata {
+	if d.threadIDCache != nil {
+		return d.threadIDCache[threadID]
 	}
 	return nil
 }

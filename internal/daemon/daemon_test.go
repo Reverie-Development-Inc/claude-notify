@@ -138,6 +138,33 @@ func TestNotificationMode(t *testing.T) {
 	}
 }
 
+func TestFindSessionByThreadID(t *testing.T) {
+	d := &Daemon{
+		threadIDCache: map[string]*session.Metadata{
+			"thread1": {PID: 100},
+			"thread2": {PID: 200},
+		},
+	}
+	m := d.findSessionByThreadID("thread1")
+	if m == nil || m.PID != 100 {
+		t.Error("expected PID 100")
+	}
+	m = d.findSessionByThreadID("unknown")
+	if m != nil {
+		t.Error("expected nil for unknown thread")
+	}
+}
+
+func TestFindSessionByThreadID_NilCache(
+	t *testing.T,
+) {
+	d := &Daemon{}
+	m := d.findSessionByThreadID("thread1")
+	if m != nil {
+		t.Error("expected nil when cache is nil")
+	}
+}
+
 func TestIsProcessAlive(t *testing.T) {
 	if !isProcessAlive(os.Getpid()) {
 		t.Error("current process should be alive")
