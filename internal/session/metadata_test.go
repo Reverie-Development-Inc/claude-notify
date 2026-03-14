@@ -124,6 +124,34 @@ func TestRemoteModeFields(t *testing.T) {
 	}
 }
 
+func TestForumMetadataRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "1234.json")
+	m := &Metadata{
+		PID:            1234,
+		FIFO:           "/tmp/fifo",
+		CWD:            "/home/test",
+		Status:         StatusWaiting,
+		ForumThreadID:  "thread123",
+		ForumLastMsgID: "msg456",
+	}
+	if err := Write(path, m); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Read(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ForumThreadID != "thread123" {
+		t.Errorf("ForumThreadID = %q, want %q",
+			got.ForumThreadID, "thread123")
+	}
+	if got.ForumLastMsgID != "msg456" {
+		t.Errorf("ForumLastMsgID = %q, want %q",
+			got.ForumLastMsgID, "msg456")
+	}
+}
+
 func TestFilePermissions(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "12345.json")

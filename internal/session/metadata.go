@@ -43,6 +43,10 @@ type Metadata struct {
 	NotificationChannelID    string `json:"notification_channel_id,omitempty"`
 	NotificationChannelMsgID string `json:"notification_channel_msg_id,omitempty"`
 
+	// Forum-mode notification tracking.
+	ForumThreadID  string `json:"forum_thread_id,omitempty"`
+	ForumLastMsgID string `json:"forum_last_msg_id,omitempty"`
+
 	// ResponseDelivered prevents multiple reactions/
 	// replies from being injected (first-wins rule).
 	ResponseDelivered bool `json:"response_delivered"`
