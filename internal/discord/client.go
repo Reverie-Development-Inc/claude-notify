@@ -1072,6 +1072,52 @@ func ForumThreadTitle(
 	return title
 }
 
+// BuildForumWaitingEmbed builds a yellow embed for a
+// forum thread waiting state. No reaction instructions
+// — forum users post messages directly.
+func BuildForumWaitingEmbed(
+	projectName, shortID, preview, summary string,
+) *discordgo.MessageEmbed {
+	body := preview
+	if summary != "" {
+		body = summary
+	}
+	body = sanitize.Truncate(body, embedDescLimit)
+
+	return &discordgo.MessageEmbed{
+		Title:       "Claude is waiting...",
+		Description: body,
+		Color:       ColorWaiting,
+		Footer: &discordgo.MessageEmbedFooter{
+			Text: fmt.Sprintf(
+				"Session: %s #%s",
+				projectName, shortID,
+			),
+		},
+		Timestamp: time.Now().Format(time.RFC3339),
+	}
+}
+
+// BuildForumWorkingEmbed builds a green one-liner
+// embed for forum thread working state.
+func BuildForumWorkingEmbed() *discordgo.MessageEmbed {
+	return &discordgo.MessageEmbed{
+		Title:     "Claude is working...",
+		Color:     ColorWorking,
+		Timestamp: time.Now().Format(time.RFC3339),
+	}
+}
+
+// BuildForumDeadEmbed builds a red embed for forum
+// thread session disconnected.
+func BuildForumDeadEmbed() *discordgo.MessageEmbed {
+	return &discordgo.MessageEmbed{
+		Title:     "Session disconnected",
+		Color:     ColorDisconnected,
+		Timestamp: time.Now().Format(time.RFC3339),
+	}
+}
+
 // Close shuts down the discordgo session and gateway.
 func (c *Client) Close() {
 	if c.session != nil {

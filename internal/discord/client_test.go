@@ -187,6 +187,57 @@ func TestForumThreadTitle(t *testing.T) {
 	}
 }
 
+func TestBuildForumWaitingEmbed(t *testing.T) {
+	embed := BuildForumWaitingEmbed(
+		"proj", "abc1", "hello", "summary",
+	)
+	if embed.Color != ColorWaiting {
+		t.Errorf("color = %d, want %d",
+			embed.Color, ColorWaiting)
+	}
+	if !contains(embed.Description, "summary") {
+		t.Error("summary not in description")
+	}
+	if contains(embed.Description, "hello") {
+		t.Error("raw preview should be replaced by summary")
+	}
+	if embed.Footer == nil ||
+		embed.Footer.Text != "Session: proj #abc1" {
+		t.Error("unexpected footer")
+	}
+}
+
+func TestBuildForumWaitingEmbed_NoSummary(t *testing.T) {
+	embed := BuildForumWaitingEmbed(
+		"proj", "abc1", "raw preview", "",
+	)
+	if !contains(embed.Description, "raw preview") {
+		t.Error("raw preview should be in description")
+	}
+}
+
+func TestBuildForumWorkingEmbed(t *testing.T) {
+	embed := BuildForumWorkingEmbed()
+	if embed.Color != ColorWorking {
+		t.Errorf("color = %d, want %d",
+			embed.Color, ColorWorking)
+	}
+	if embed.Title != "Claude is working..." {
+		t.Errorf("title = %q", embed.Title)
+	}
+}
+
+func TestBuildForumDeadEmbed(t *testing.T) {
+	embed := BuildForumDeadEmbed()
+	if embed.Color != ColorDisconnected {
+		t.Errorf("color = %d, want %d",
+			embed.Color, ColorDisconnected)
+	}
+	if embed.Title != "Session disconnected" {
+		t.Errorf("title = %q", embed.Title)
+	}
+}
+
 func contains(s, sub string) bool {
 	return len(s) >= len(sub) &&
 		containsAt(s, sub)
