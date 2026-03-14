@@ -108,6 +108,36 @@ func TestShouldNotify_RemoteModeExpired(t *testing.T) {
 	}
 }
 
+func TestNotificationMode(t *testing.T) {
+	tests := []struct {
+		name    string
+		channel string
+		forum   string
+		want    NotificationMode
+	}{
+		{"default DM", "", "", ModeDM},
+		{"channel set", "ch1", "", ModeChannel},
+		{"forum set", "", "f1", ModeForum},
+		{
+			"forum takes priority",
+			"ch1", "f1", ModeForum,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := resolveMode(
+				tt.channel, tt.forum,
+			)
+			if got != tt.want {
+				t.Errorf(
+					"got %d, want %d",
+					got, tt.want,
+				)
+			}
+		})
+	}
+}
+
 func TestIsProcessAlive(t *testing.T) {
 	if !isProcessAlive(os.Getpid()) {
 		t.Error("current process should be alive")

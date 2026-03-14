@@ -18,6 +18,40 @@ import (
 	"github.com/Reverie-Development-Inc/claude-notify/internal/session"
 )
 
+// NotificationMode determines how notifications are
+// delivered to Discord.
+type NotificationMode int
+
+const (
+	ModeDM NotificationMode = iota
+	ModeChannel
+	ModeForum
+)
+
+// resolveMode returns the notification mode based on
+// which config fields are set. Forum takes priority.
+func resolveMode(
+	channel, forum string,
+) NotificationMode {
+	if forum != "" {
+		return ModeForum
+	}
+	if channel != "" {
+		return ModeChannel
+	}
+	return ModeDM
+}
+
+// notificationMode returns the current mode from
+// runtime config.
+func (d *Daemon) notificationMode() NotificationMode {
+	drc := config.GetDiscordRuntimeConfig()
+	return resolveMode(
+		drc.NotificationChannel,
+		drc.ForumChannelID,
+	)
+}
+
 // Daemon is the orchestration brain of claude-notify. It
 // periodically scans session metadata files, sends Discord
 // DMs when sessions have been waiting too long, and handles
