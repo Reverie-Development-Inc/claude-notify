@@ -678,6 +678,76 @@ func (c *Client) NackReply(
 	return err
 }
 
+// SendForumNotification creates a new forum thread
+// with an embed as the initial message. Returns the
+// thread channel ID and the initial message ID.
+func (c *Client) SendForumNotification(
+	forumChannelID string,
+	threadTitle string,
+	embed *discordgo.MessageEmbed,
+) (threadID string, msgID string, err error) {
+	if err := c.checkRateLimit(); err != nil {
+		return "", "", err
+	}
+	ch, err := c.session.ForumThreadStartEmbed(
+		forumChannelID, threadTitle, 1440, embed,
+	)
+	if err != nil {
+		c.handleRateLimit(err)
+		return "", "", fmt.Errorf(
+			"create forum thread: %w", err)
+	}
+	msgID = ch.ID
+	if len(ch.Messages) > 0 {
+		msgID = ch.Messages[0].ID
+	}
+	c.validator.SetNotificationTime(time.Now())
+	return ch.ID, msgID, nil
+}
+
+// PostForumMessage sends a new embed message in an
+// existing forum thread. Returns the message ID.
+func (c *Client) PostForumMessage(
+	threadID string,
+	embed *discordgo.MessageEmbed,
+) (string, error) {
+	if err := c.checkRateLimit(); err != nil {
+		return "", err
+	}
+	msg, err := c.session.ChannelMessageSendEmbed(
+		threadID, embed,
+	)
+	if err != nil {
+		c.handleRateLimit(err)
+		return "", fmt.Errorf(
+			"post forum message: %w", err)
+	}
+	return msg.ID, nil
+}
+
+// EditForumThreadTitle updates the title and
+// optionally archives a forum thread.
+func (c *Client) EditForumThreadTitle(
+	threadID, title string, archive bool,
+) error {
+	if err := c.checkRateLimit(); err != nil {
+		return err
+	}
+	edit := &discordgo.ChannelEdit{
+		Name: title,
+	}
+	if archive {
+		edit.Archived = &archive
+	}
+	_, err := c.session.ChannelEditComplex(
+		threadID, edit,
+	)
+	if err != nil {
+		c.handleRateLimit(err)
+	}
+	return err
+}
+
 // --- Gateway event handlers ---
 
 func (c *Client) onReady(
