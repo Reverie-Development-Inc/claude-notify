@@ -910,6 +910,12 @@ func (d *Daemon) notifChannelID(
 func (d *Daemon) transitionToWorking(
 	meta *session.Metadata,
 ) {
+	if d.notificationMode() == ModeForum &&
+		meta.ForumThreadID != "" {
+		d.forumTransitionToWorking(meta)
+		return
+	}
+
 	chID := d.notifChannelID(meta)
 	num := d.sessionNumber(meta.ShortID)
 	title := fmt.Sprintf(
@@ -938,6 +944,37 @@ func (d *Daemon) transitionToWorking(
 	}
 	log.Printf(
 		"session %d → working (green)",
+		meta.PID,
+	)
+}
+
+// forumTransitionToWorking posts a green embed in
+// the forum thread when the session becomes active.
+func (d *Daemon) forumTransitionToWorking(
+	meta *session.Metadata,
+) {
+	embed := discord.BuildForumWorkingEmbed()
+	_, err := d.discord.PostForumMessage(
+		meta.ForumThreadID, embed,
+	)
+	if err != nil {
+		log.Printf(
+			"forum working for %d: %v",
+			meta.PID, err,
+		)
+	}
+
+	meta.NotificationSent = false
+	meta.RemoteMode = false
+	metaPath := filepath.Join(
+		d.stateDir,
+		fmt.Sprintf("%d.json", meta.PID),
+	)
+	if err := session.Write(metaPath, meta); err != nil {
+		log.Printf("update metadata: %v", err)
+	}
+	log.Printf(
+		"session %d → working (forum, green)",
 		meta.PID,
 	)
 }
