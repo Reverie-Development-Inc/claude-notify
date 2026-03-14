@@ -805,7 +805,8 @@ func (c *Client) onMessageReactionAdd(
 		return
 	}
 	emoji := r.Emoji.Name
-	if ExpandReaction(emoji) == "" {
+	if ExpandReaction(emoji) == "" &&
+		emoji != ReactionLook {
 		return
 	}
 
