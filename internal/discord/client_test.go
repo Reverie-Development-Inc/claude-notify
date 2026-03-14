@@ -159,6 +159,34 @@ func TestIsNotificationEmbed(t *testing.T) {
 	}
 }
 
+func TestForumThreadTitle(t *testing.T) {
+	tests := []struct {
+		shortID string
+		project string
+		closed  bool
+		want    string
+	}{
+		{"f070", "reverie", false,
+			"#f070 \u2014 reverie"},
+		{"f070", "reverie", true,
+			"[CLOSED] #f070 \u2014 reverie"},
+		{"ab12", "my-project", false,
+			"#ab12 \u2014 my-project"},
+	}
+	for _, tt := range tests {
+		got := ForumThreadTitle(
+			tt.shortID, tt.project, tt.closed,
+		)
+		if got != tt.want {
+			t.Errorf(
+				"ForumThreadTitle(%q,%q,%v) = %q, want %q",
+				tt.shortID, tt.project, tt.closed,
+				got, tt.want,
+			)
+		}
+	}
+}
+
 func contains(s, sub string) bool {
 	return len(s) >= len(sub) &&
 		containsAt(s, sub)

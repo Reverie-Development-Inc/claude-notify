@@ -988,6 +988,20 @@ func (c *Client) RespondToInteraction(
 	)
 }
 
+// ForumThreadTitle builds the thread title for a
+// forum-mode session.
+func ForumThreadTitle(
+	shortID, projectName string, closed bool,
+) string {
+	title := fmt.Sprintf(
+		"#%s \u2014 %s", shortID, projectName,
+	)
+	if closed {
+		title = "[CLOSED] " + title
+	}
+	return title
+}
+
 // Close shuts down the discordgo session and gateway.
 func (c *Client) Close() {
 	if c.session != nil {
