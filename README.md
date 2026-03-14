@@ -86,7 +86,9 @@ On the **OAuth2** tab, under **URL Generator**:
 - **Scopes**: `bot`, `applications.commands`
 - **Bot Permissions**: `Send Messages`,
   `Read Message History`, `Add Reactions`,
-  `Manage Messages` (for editing/deleting its own embeds)
+  `Manage Messages` (for editing/deleting its own embeds),
+  `Create Public Threads`, `Send Messages in Threads`,
+  `Manage Threads` (for forum mode)
 
 ### 5. Invite the bot (optional for DM mode)
 
@@ -99,6 +101,14 @@ server members enabled.
 channel instead of DMs, use the generated OAuth2 URL to
 invite the bot to your server. Then use `/configure` to
 set the notification channel.
+
+**Forum mode**: If you want each session as a separate
+forum thread, create a forum channel in your server and
+invite the bot. Then use `/configure forum set <id>`.
+Each session creates a thread titled
+`#<shortID> — <project>`. Reply directly in the thread.
+Threads are archived and titled `[CLOSED]` when sessions
+end.
 
 ### 6. Get your Discord user ID
 
@@ -292,9 +302,23 @@ or reply afterward.
 React to respond quickly, or use Discord's **Reply** feature
 to type a custom response.
 
-### Live Status Embeds
+### Notification Modes
 
-Notification embeds update in real-time with color-coded status:
+Three mutually exclusive modes. DM is default.
+
+| Mode | Set with | Behavior |
+|------|----------|----------|
+| **DM** (default) | `/configure channel clear` | Embed in bot DM, edited in place |
+| **Channel** | `/configure channel set <id>` | Embed in guild channel, edited in place |
+| **Forum** | `/configure forum set <id>` | Thread per session, new messages per state change |
+
+Setting forum clears channel (and vice versa). Clear
+both to return to DM mode.
+
+### Live Status Embeds (DM / Channel mode)
+
+Notification embeds update in real-time with color-coded
+status:
 
 | State | Color | Title |
 |-------|-------|-------|
@@ -308,28 +332,54 @@ Notification embeds update in real-time with color-coded status:
   turns green. Your reactions are preserved as a record.
 - **Re-wait**: If Claude finishes and waits again, the same
   embed flips back to yellow with updated text
-- **Disconnect**: Session dies → embed turns red → auto-deleted
-  after 30 seconds
-- **First-wins**: If a reaction and reply race, the first one
-  wins. Duplicate replies get a hint: "A response was already
-  delivered by @user."
+- **Disconnect**: Session dies → embed turns red →
+  auto-deleted after 30 seconds
+- **First-wins**: If a reaction and reply race, the first
+  one wins. Duplicate replies get a hint: "A response was
+  already delivered by @user."
 
 If the session is no longer active, the bot reacts with ❌
 and sends "Session is no longer active."
 
-### `/clear` Slash Command
+### Forum Mode
 
-Use the `/clear` slash command in your DM with the bot to
-remove stale notification messages:
+Each session becomes a forum thread titled
+`#<shortID> — <project>`:
+
+- **Waiting**: New yellow embed posted in thread
+- **Working**: Short green status embed posted
+- **Re-wait**: Another yellow embed (not an edit)
+- **Disconnect**: Red embed, title changes to
+  `[CLOSED] #<shortID> — <project>`, thread archived
+- **Reply**: Post a message in the thread. Bot reacts ✅
+  to confirm delivery.
+- **No bot reactions**: No ✅ ❌ 👀 buttons on bot
+  messages — just type in the thread.
+- **Threads persist** — no 30s auto-delete like DM/channel
+  mode.
+
+### Slash Commands
+
+**`/clear`** — Remove stale notification messages:
 
 - `/clear` — removes all notification embeds (up to 14
   days old)
 - `/clear session:ab12` — removes only notifications for
   the given session ID
 
-The response is **ephemeral** (only visible to you), so
-`/clear` never leaves a trail in your DM history. Works
-even when no Claude Code sessions are active.
+**`/configure`** — Change notification mode and settings:
+
+- `/configure channel set <id>` — post to a guild channel
+- `/configure channel clear` — back to DM mode
+- `/configure channel show` — show current channel
+- `/configure forum set <id>` — use forum threads
+- `/configure forum clear` — stop using forum mode
+- `/configure forum show` — show current forum channel
+- `/configure user add <id>` — allow another user to reply
+- `/configure user remove <id>` — revoke a user
+- `/configure user list` — list allowed users
+
+All responses are **ephemeral** (only visible to you).
 
 ## Security
 
