@@ -20,7 +20,6 @@ import {
 import { preview } from "./sanitize.js";
 import {
   SHORTCUT_REACTIONS,
-  NUMBER_REACTIONS,
   expandReaction,
 } from "./reactions.js";
 
@@ -41,12 +40,6 @@ interface SessionEntry {
   unsubscribe: (() => void) | null;
   suggestions: string[];
 }
-
-const DEFAULT_SUGGESTIONS = [
-  "Yes, continue",
-  "No, stop here",
-  "Show me what you have so far",
-];
 
 export class SessionManager {
   private sessions = new Map<
@@ -218,16 +211,13 @@ export class SessionManager {
       this.config.previewLength,
     );
 
-    // Use default suggestions (numbered
-    // reactions always available)
-    const suggestions = DEFAULT_SUGGESTIONS;
-    entry.suggestions = suggestions;
+    entry.suggestions = [];
 
     const embed = waitingEmbed(
       this.project,
       sessionID,
       previewText,
-      suggestions,
+      [],
     );
 
     try {
@@ -248,23 +238,60 @@ export class SessionManager {
         );
       if (!channel || !channel.isTextBased())
         return;
+
+      // Reuse existing message if we have one
+      // (edit back to waiting instead of
+      // creating a new message each cycle).
+      if (
+        entry.notificationMsgID &&
+        "messages" in channel
+      ) {
+        try {
+          const existing =
+            await channel.messages.fetch(
+              entry.notificationMsgID,
+            );
+          await existing.edit({
+            embeds: [embed],
+          });
+
+          // Re-add bot reactions
+          for (const emoji of SHORTCUT_REACTIONS) {
+            await existing
+              .react(emoji)
+              .catch(() => {});
+          }
+
+          entry.state = "notified";
+          entry.responseDelivered = false;
+
+          entry.unsubscribe = onReply(
+            this.dc,
+            this.config,
+            existing.id,
+            (text) =>
+              this.handleDiscordResponse(
+                sessionID,
+                text,
+              ),
+          );
+          return;
+        } catch {
+          // Message was deleted — fall through
+          // to create a new one.
+          entry.notificationMsgID = null;
+        }
+      }
+
+      // No existing message — send a new one.
       if (!("send" in channel)) return;
 
       const msg = await channel.send({
         embeds: [embed],
       });
 
-      // Add shortcut reactions
       for (const emoji of SHORTCUT_REACTIONS) {
         await msg.react(emoji);
-      }
-      // Add numbered reactions for suggestions
-      for (
-        let i = 0;
-        i < suggestions.length && i < 5;
-        i++
-      ) {
-        await msg.react(NUMBER_REACTIONS[i]);
       }
 
       entry.notificationMsgID = msg.id;
