@@ -1,0 +1,9 @@
+# .rag.yaml — RAG indexer source declaration
+sources:
+  - path: docs/plans/
+    type: plan
+    glob: "*.md"
+  - path: CLAUDE.md
+    type: repo-doc
+  - path: README.md
+    type: repo-doc
