@@ -2,6 +2,12 @@
 /build/
 /claude-notify
 
+# Dependencies
+node_modules/
+
+# TypeScript build output
+plugins/*/dist/
+
 # IDE
 .idea/
 .vscode/
@@ -15,6 +21,7 @@
 CLAUDE.md
 .beads/
 docs/plans/
+.claude/
 
 # OS
 .DS_Store

@@ -434,6 +434,16 @@ Reply injection is not available — respond by returning
 to the terminal. For full features, use
 [WSL2](https://learn.microsoft.com/en-us/windows/wsl/).
 
+## OpenCode Support
+
+An OpenCode plugin is available for users who use
+[OpenCode](https://opencode.ai) instead of (or alongside)
+Claude Code. The plugin provides the same notification and
+reply functionality using OpenCode's native plugin system.
+
+See [plugins/opencode/README.md](plugins/opencode/README.md)
+for setup instructions.
+
 ## License
 
 MIT -- see [LICENSE](LICENSE).
