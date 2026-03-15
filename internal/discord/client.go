@@ -922,11 +922,18 @@ func (c *Client) RegisterCommands() error {
 			"appID not set (gateway not ready)")
 	}
 
+	// DefaultMemberPermissions = 0 hides commands
+	// from all users by default. Only server admins
+	// (or the owner via DM) can see them. The handler
+	// also checks owner ID as defense-in-depth.
+	noPerms := int64(0)
+
 	commands := []*discordgo.ApplicationCommand{
 		{
 			Name: "clear",
 			Description: "Clear claude-notify " +
 				"notifications",
+			DefaultMemberPermissions: &noPerms,
 			Options: []*discordgo.ApplicationCommandOption{
 				{
 					Type: discordgo.
@@ -937,8 +944,9 @@ func (c *Client) RegisterCommands() error {
 			},
 		},
 		{
-			Name:        "configure",
-			Description: "Configure claude-notify",
+			Name:                     "configure",
+			Description:              "Configure claude-notify",
+			DefaultMemberPermissions: &noPerms,
 			Options: []*discordgo.ApplicationCommandOption{
 				{
 					Type: discordgo.
